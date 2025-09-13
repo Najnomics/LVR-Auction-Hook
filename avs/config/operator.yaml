@@ -1,0 +1,83 @@
+# LVR Auction Hook Operator Configuration
+
+# Operator identity
+private_key: "0x1234567890123456789012345678901234567890123456789012345678901234"  # Replace with actual private key
+address: "0x1234567890123456789012345678901234567890"  # Will be derived from private key
+stake_amount: "32000000000000000000"  # 32 ETH in wei
+service_manager: "0x1234567890123456789012345678901234567890"  # Replace with actual service manager address
+
+# Network configuration
+network_config:
+  chain_id: 1  # Ethereum mainnet
+  rpc_url: "https://eth-mainnet.alchemyapi.io/v2/YOUR_API_KEY"  # Replace with actual RPC URL
+  ws_url: "wss://eth-mainnet.alchemyapi.io/v2/YOUR_API_KEY"     # Replace with actual WebSocket URL
+  contract_addresses:
+    lvr_hook: "0x1234567890123456789012345678901234567890"      # Replace with actual hook address
+    service_manager: "0x1234567890123456789012345678901234567890"  # Replace with actual service manager
+    price_oracle: "0x1234567890123456789012345678901234567890"     # Replace with actual oracle address
+  block_confirmations: 3
+
+# Price feed configurations
+price_feeds:
+  - name: "binance"
+    url: "https://api.binance.com/api/v3"
+    api_key: ""  # Not required for public Binance API
+    update_frequency_seconds: 5
+    pairs:
+      - token0: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"  # WETH
+        token1: "0xA0b86a33E6417C8a9bbE78fE047cE5c17Aed0ADA"  # USDC
+        symbol: "ETHUSDC"
+        decimals: 18
+        is_active: true
+      - token0: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"  # WBTC
+        token1: "0xA0b86a33E6417C8a9bbE78fE047cE5c17Aed0ADA"  # USDC
+        symbol: "BTCUSDC"
+        decimals: 8
+        is_active: true
+      - token0: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"  # WETH
+        token1: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"  # WBTC
+        symbol: "ETHBTC"
+        decimals: 18
+        is_active: true
+
+  - name: "coinbase"
+    url: "https://api.exchange.coinbase.com"
+    api_key: ""  # Not required for public Coinbase API
+    update_frequency_seconds: 10
+    pairs:
+      - token0: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"  # WETH
+        token1: "0xA0b86a33E6417C8a9bbE78fE047cE5c17Aed0ADA"  # USDC
+        symbol: "ETH-USD"
+        decimals: 18
+        is_active: true
+
+  - name: "kraken"
+    url: "https://api.kraken.com/0/public"
+    api_key: ""  # Not required for public Kraken API
+    update_frequency_seconds: 15
+    pairs:
+      - token0: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"  # WETH
+        token1: "0xA0b86a33E6417C8a9bbE78fE047cE5c17Aed0ADA"  # USDC
+        symbol: "ETHUSD"
+        decimals: 18
+        is_active: true
+
+# Logging configuration
+log_level: "info"  # debug, info, warn, error
+
+# Metrics configuration
+metrics_port: 8080
+
+# Auction configuration
+auction_config:
+  min_bid_amount: "1000000000000000"  # 0.001 ETH in wei
+  max_auction_duration: 12           # seconds
+  lvr_threshold: 50                  # basis points (0.5%)
+  consensus_threshold: 2             # minimum operators for consensus
+
+# Performance configuration
+performance:
+  max_concurrent_tasks: 10
+  task_timeout: 60  # seconds
+  price_update_interval: 1  # seconds
+  cache_cleanup_interval: 300  # seconds

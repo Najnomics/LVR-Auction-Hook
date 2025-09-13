@@ -1,8 +1,123 @@
-# LVR Auction Hook [![Solidity](https://img.shields.io/badge/Solidity-0.8.24-blue.svg)](https://soliditylang.org/) [![EigenLayer](https://img.shields.io/badge/EigenLayer-AVS-purple.svg)](https://eigenlayer.xyz/) [![UniswapV4](https://img.shields.io/badge/UniswapV4-Hook-orange.svg)](https://uniswap.org/) [![MEV](https://img.shields.io/badge/MEV-Redistribution-red.svg)](https://ethereum.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+# LVR Auction Hook [![Solidity](https://img.shields.io/badge/Solidity-0.8.26-blue.svg)](https://soliditylang.org/) [![EigenLayer](https://img.shields.io/badge/EigenLayer-AVS-purple.svg)](https://eigenlayer.xyz/) [![UniswapV4](https://img.shields.io/badge/UniswapV4-Hook-orange.svg)](https://uniswap.org/) [![MEV](https://img.shields.io/badge/MEV-Redistribution-red.svg)](https://ethereum.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Run an auction to reduce Loss Versus Rebalancing (LVR) by redistributing MEV profits to liquidity providers**
 
 LVR Auction Hook is a Uniswap V4 hook that integrates with an EigenLayer AVS to auction the right to be first-in-block for trades, redistributing MEV extraction proceeds directly to liquidity providers instead of validators. This system compensates LPs for LVR losses by turning arbitrage opportunities into revenue streams.
+
+## 🚀 Quick Start
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/lvr-auction-hook
+cd lvr-auction-hook
+
+# Quick setup and build
+make quick-start
+
+# Start development environment
+make dev
+```
+
+## 📋 Prerequisites
+
+- **Foundry**: `curl -L https://foundry.paradigm.xyz | bash && foundryup`
+- **Node.js**: Version 18+ with npm
+- **Go**: Version 1.21+
+- **Git**: For version control
+
+## 🛠️ Installation
+
+```bash
+# Install all dependencies
+make install
+
+# Set up environment
+make env-setup
+# Edit .env with your configuration
+
+# Build all components
+make build
+```
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+make test
+
+# Run tests with coverage
+make full-test
+
+# Test specific components
+make test-contracts    # Smart contracts only
+make test-frontend     # Frontend only
+make test-avs         # AVS operator only
+```
+
+## 🚀 Development
+
+```bash
+# Start local development
+make dev
+
+# Or start individual components
+make dev-contracts    # Local blockchain (Anvil)
+make dev-frontend     # React dev server
+make dev-avs         # AVS operator
+```
+
+## 📦 Deployment
+
+```bash
+# Deploy to local network
+make deploy-contracts-local
+
+# Deploy to Sepolia testnet
+make deploy-contracts-sepolia
+
+# Deploy to mainnet (⚠️ Production)
+make deploy-contracts-mainnet
+```
+
+## 📁 Project Structure
+
+```
+lvr-auction-hook/
+├── contracts/              # Smart contracts (Solidity)
+│   ├── src/               # Source contracts
+│   ├── test/              # Contract tests
+│   ├── script/            # Deployment scripts
+│   └── foundry.toml       # Foundry configuration
+├── avs/                   # EigenLayer AVS (Go)
+│   ├── cmd/               # CLI commands
+│   ├── pkg/               # Go packages
+│   └── config/            # Configuration files
+├── frontend/              # React dashboard
+│   ├── src/               # React source
+│   ├── public/            # Static assets
+│   └── package.json       # Node dependencies
+├── backend/               # FastAPI backend (optional)
+├── Makefile              # Main build system
+└── README.md             # This file
+```
+
+## 🔧 Available Commands
+
+Run `make help` to see all available commands:
+
+```bash
+make help                 # Show all commands
+make install              # Install dependencies
+make build                # Build all components
+make test                 # Run all tests
+make dev                  # Start development
+make deploy               # Deploy to networks
+make clean                # Clean build artifacts
+make lint                 # Lint all code
+make format               # Format all code
+```
+
+## 📊 Architecture Overview
 
 ---
 
