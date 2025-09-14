@@ -9,6 +9,7 @@ import {IPriceOracle} from "../src/interfaces/IPriceOracle.sol";
 import {BaseHook} from "v4-periphery/src/utils/BaseHook.sol";
 import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
 import {PoolId} from "@uniswap/v4-core/types/PoolId.sol";
+import {Currency} from "@uniswap/v4-core/types/Currency.sol";
 import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/types/PoolOperation.sol";
 import {BalanceDelta} from "@uniswap/v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta} from "@uniswap/v4-core/types/BeforeSwapDelta.sol";
@@ -47,6 +48,42 @@ contract TestLVRAuctionHook is LVRAuctionHook {
     function setMockPoolPrice(PoolKey calldata key, uint256 price) external {
         bytes32 poolKey = keccak256(abi.encode(key.currency0, key.currency1, key.fee));
         mockPoolPrices[poolKey] = price;
+    }
+    
+    /// @dev Set mock sqrt price for testing
+    function setMockSqrtPrice(PoolKey calldata key, uint160 sqrtPrice) external {
+        bytes32 poolKey = keccak256(abi.encode(key.currency0, key.currency1, key.fee));
+        // Store as uint256 for compatibility with existing mock system
+        mockPoolPrices[poolKey] = uint256(sqrtPrice);
+    }
+    
+    /// @dev Test function to get pool price
+    function testGetPoolPrice(PoolKey calldata key) external view returns (uint256) {
+        bytes32 poolKey = keccak256(abi.encode(key.currency0, key.currency1, key.fee));
+        return mockPoolPrices[poolKey];
+    }
+    
+    /// @dev Test function to check if should invert price
+    function testShouldInvertPrice(Currency token0, Currency token1) external pure returns (bool) {
+        // Check if either token is a USD stablecoin
+        address token0Addr = Currency.unwrap(token0);
+        address token1Addr = Currency.unwrap(token1);
+        
+        // USD stablecoin addresses
+        address USDC = 0xA0b86a33E6417c8a9bbe78fe047ce5C17aEd0Ada;
+        address USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+        address DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+        
+        bool token0IsUSD = (token0Addr == USDC || token0Addr == USDT || token0Addr == DAI);
+        bool token1IsUSD = (token1Addr == USDC || token1Addr == USDT || token1Addr == DAI);
+        
+        // If token0 is USD stablecoin, invert the price
+        if (token0IsUSD && !token1IsUSD) {
+            return true;
+        }
+        
+        // Otherwise use address ordering
+        return token0Addr < token1Addr;
     }
     
     /// @dev Test function to create auction manually
@@ -113,7 +150,7 @@ contract TestLVRAuctionHook is LVRAuctionHook {
     ) external {
         AuctionLib.Auction storage auction = auctions[auctionId];
         require(auction.isActive, "EigenLVR: auction not active");
-        require(auction.isAuctionEnded(), "EigenLVR: auction not ended");
+        require(AuctionLib.isAuctionEnded(auction), "LVRAuctionHook: auction not ended");
         
         auction.isActive = false;
         auction.isComplete = true;

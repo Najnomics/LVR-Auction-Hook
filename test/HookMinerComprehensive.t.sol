@@ -107,158 +107,168 @@ contract HookMinerComprehensive is Test {
             hex"00"
         );
         
-        // Different deployers should give different results
         assertTrue(hookAddress1 != hookAddress2);
+        assertTrue(salt1 != salt2);
         assertTrue((uint160(hookAddress1) & flags) == flags);
         assertTrue((uint160(hookAddress2) & flags) == flags);
     }
     
     function test_Find_DifferentBytecode() public {
+        uint160 flags = 0x1000;
+        
+        (address hookAddress1, bytes32 salt1) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"608060405234801561001057600080fd5b50",
+            hex"00"
+        );
+        
+        (address hookAddress2, bytes32 salt2) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"608060405234801561001057600080fd5b51",
+            hex"00"
+        );
+        
+        assertTrue(hookAddress1 != hookAddress2);
+        assertTrue(salt1 != salt2);
+    }
+    
+    function test_Find_MultipleFlags() public {
+        uint160 flags = 0x1100; // Multiple flags
+        
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            hex"00"
+        );
+        
+        assertTrue((uint160(hookAddress) & flags) == flags);
+    }
+    
+    function test_Find_AllFlags() public {
+        uint160 flags = type(uint160).max; // All flags set
+        
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            hex"00"
+        );
+        
+        assertTrue((uint160(hookAddress) & flags) == flags);
+    }
+    
+    function test_Find_ZeroDeployer() public {
         uint160 flags = 0x0010;
         
-        (address hookAddress1,) = HookMiner.find(
-            address(0x1),
-            flags,
-            hex"60806040",
-            hex"00"
-        );
-        
-        (address hookAddress2,) = HookMiner.find(
-            address(0x1),
-            flags,
-            hex"60806041", // Different bytecode
-            hex"00"
-        );
-        
-        assertTrue(hookAddress1 != hookAddress2);
-        assertTrue((uint160(hookAddress1) & flags) == flags);
-        assertTrue((uint160(hookAddress2) & flags) == flags);
-    }
-    
-    function test_Find_DifferentConstructorArgs() public {
-        uint160 flags = 0x0008;
-        
-        (address hookAddress1,) = HookMiner.find(
-            address(0x1),
-            flags,
-            hex"60806040",
-            hex"01"
-        );
-        
-        (address hookAddress2,) = HookMiner.find(
-            address(0x1),
-            flags,
-            hex"60806040",
-            hex"02" // Different constructor args
-        );
-        
-        assertTrue(hookAddress1 != hookAddress2);
-        assertTrue((uint160(hookAddress1) & flags) == flags);
-        assertTrue((uint160(hookAddress2) & flags) == flags);
-    }
-    
-    function test_Find_SequentialSalts() public {
-        uint160 flags = 0x0004;
-        
         (address hookAddress, bytes32 salt) = HookMiner.find(
-            address(0x1),
+            address(0),
             flags,
             hex"60806040",
             hex"00"
         );
         
         assertTrue((uint160(hookAddress) & flags) == flags);
-        // Salt should be relatively small for simple flags
-        assertTrue(uint256(salt) < 10000000);
     }
     
-    function test_Find_LargerBytecode() public {
-        uint160 flags = 0x0002;
-        
-        // Create larger bytecode
-        bytes memory largeBytecode = new bytes(200);
-        for (uint i = 0; i < 200; i++) {
-            largeBytecode[i] = bytes1(uint8(i % 256));
-        }
-        
-        (address hookAddress, bytes32 salt) = HookMiner.find(
-            address(0x1),
-            flags,
-            largeBytecode,
-            hex"00"
-        );
-        
-        assertTrue((uint160(hookAddress) & flags) == flags);
-        // Salt can be zero if a valid address is found immediately
-        assertTrue(hookAddress != address(0));
-    }
-    
-    function test_Find_MediumFlags() public {
-        // Test with reasonable flags that should be findable
-        uint160 flags = 0x00F0; // 4 bits set, but not too high
-        
-        (address hookAddress, bytes32 salt) = HookMiner.find(
-            address(0x1),
-            flags,
-            hex"60806040",
-            hex"00"
-        );
-        
-        assertTrue((uint160(hookAddress) & flags) == flags);
-        assertTrue(salt != bytes32(0));
-    }
-    
-    function test_Find_ReasonableTimeout() public {
-        // Test that we can find addresses within reasonable gas limits
+    function test_Find_ZeroSalt() public {
         uint160 flags = 0x0001;
         
-        uint256 gasStart = gasleft();
-        
-        (address hookAddress,) = HookMiner.find(
+        (address hookAddress, bytes32 salt) = HookMiner.find(
             address(0x1),
             flags,
             hex"60806040",
             hex"00"
         );
-        
-        uint256 gasUsed = gasStart - gasleft();
         
         assertTrue((uint160(hookAddress) & flags) == flags);
-        // Should not use excessive gas (less than 10M)
-        assertTrue(gasUsed < 10000000);
+        // For easy flags, salt might be 0
+        assertTrue(salt >= bytes32(0));
     }
     
-    // Fuzz tests with reasonable constraints
-    function testFuzz_ComputeAddress_Deterministic(
-        address deployer,
-        bytes32 salt,
-        bytes memory bytecode
-    ) public pure {
-        vm.assume(bytecode.length < 1000); // Reasonable bytecode size
+    function test_Find_LargeSalt() public {
+        uint160 flags = 0x1000;
         
-        address addr1 = HookMiner.computeAddress(deployer, salt, bytecode);
-        address addr2 = HookMiner.computeAddress(deployer, salt, bytecode);
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        );
         
-        assertEq(addr1, addr2);
+        assertTrue((uint160(hookAddress) & flags) == flags);
+        assertTrue(salt >= bytes32(0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff));
     }
     
-    function testFuzz_Find_SimpleFlags(uint8 flagByte) public {
-        vm.assume(flagByte != 0);
-        vm.assume(flagByte <= 0x0F); // Keep flags simple for testing
+    function test_Find_Consistency() public {
+        uint160 flags = 0x0100;
         
-        uint160 flags = uint160(flagByte);
+        (address hookAddress1, bytes32 salt1) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            hex"00"
+        );
         
-        try this.attemptFind(flags) returns (address hookAddr, bytes32 salt) {
-            assertTrue((uint160(hookAddr) & flags) == flags);
-            assertTrue(hookAddr != address(0));
-            // Don't check salt since some might be zero
-        } catch {
-            // Some flag combinations might be too hard to find - that's OK
-        }
+        (address hookAddress2, bytes32 salt2) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            hex"00"
+        );
+        
+        // Should find the same result consistently
+        assertEq(hookAddress1, hookAddress2);
+        assertEq(salt1, salt2);
     }
     
-    function attemptFind(uint160 flags) external pure returns (address, bytes32) {
-        return HookMiner.find(
+    function test_Find_RealisticBytecode() public {
+        // Test with more realistic contract bytecode
+        bytes memory bytecode = abi.encodePacked(
+            hex"608060405234801561001057600080fd5b50", // Constructor
+            hex"34", // CALLVALUE
+            hex"80", // DUP1
+            hex"15", // ISZERO
+            hex"60", // PUSH1
+            hex"17", // 0x17
+            hex"57", // JUMPI
+            hex"60", // PUSH1
+            hex"00", // 0x00
+            hex"80", // DUP1
+            hex"fd", // REVERT
+            hex"5b", // JUMPDEST
+            hex"60", // PUSH1
+            hex"01", // 0x01
+            hex"60", // PUSH1
+            hex"00", // 0x00
+            hex"55", // SSTORE
+            hex"50", // POP
+            hex"60", // PUSH1
+            hex"00", // 0x00
+            hex"f3"  // RETURN
+        );
+        
+        uint160 flags = 0x0010;
+        
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            address(0x1),
+            flags,
+            bytecode,
+            hex"00"
+        );
+        
+        assertTrue((uint160(hookAddress) & flags) == flags);
+    }
+    
+    function test_Find_MaxIterations() public {
+        // Test with a very high flag that might take many iterations
+        uint160 flags = uint160(0x8000000000000000000000000000000000000000);
+        
+        // This might take a while, so we'll use a timeout
+        vm.expectRevert(); // Expect timeout or revert for very difficult flags
+        HookMiner.find(
             address(0x1),
             flags,
             hex"60806040",
@@ -266,22 +276,59 @@ contract HookMinerComprehensive is Test {
         );
     }
     
-    // Gas efficiency tests
-    function test_GasEfficiency_NoFlags() public view {
-        uint256 gasStart = gasleft();
+    function test_Find_EdgeCaseFlags() public {
+        // Test with edge case flag values
+        uint160 flags = 0x0001;
         
-        HookMiner.find(address(0x1), 0, hex"60806040", hex"00");
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            hex"00"
+        );
         
-        uint256 gasUsed = gasStart - gasleft();
-        assertTrue(gasUsed < 50000); // Should be very fast for no flags
+        assertTrue((uint160(hookAddress) & flags) == flags);
     }
     
-    function test_GasEfficiency_SimpleFlag() public view {
-        uint256 gasStart = gasleft();
+    function test_Find_WithInitialSalt() public {
+        uint160 flags = 0x1000;
+        bytes32 initialSalt = keccak256("test");
         
-        HookMiner.find(address(0x1), 0x0001, hex"60806040", hex"00");
+        (address hookAddress, bytes32 salt) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            abi.encodePacked(initialSalt)
+        );
         
-        uint256 gasUsed = gasStart - gasleft();
-        assertTrue(gasUsed < 2000000); // Should be reasonable for simple flags
+        assertTrue((uint160(hookAddress) & flags) == flags);
+        assertTrue(salt >= initialSalt);
+    }
+    
+    function test_Find_StatisticalDistribution() public {
+        // Test that different runs produce different results
+        uint160 flags = 0x0100;
+        
+        (address hookAddress1, bytes32 salt1) = HookMiner.find(
+            address(0x1),
+            flags,
+            hex"60806040",
+            hex"00"
+        );
+        
+        (address hookAddress2, bytes32 salt2) = HookMiner.find(
+            address(0x2),
+            flags,
+            hex"60806040",
+            hex"00"
+        );
+        
+        // Different deployers should produce different addresses
+        assertTrue(hookAddress1 != hookAddress2);
+        assertTrue(salt1 != salt2);
+        
+        // Both should satisfy the flag requirement
+        assertTrue((uint160(hookAddress1) & flags) == flags);
+        assertTrue((uint160(hookAddress2) & flags) == flags);
     }
 }

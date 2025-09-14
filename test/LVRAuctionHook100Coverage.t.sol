@@ -5,12 +5,14 @@ import {Test, console} from "forge-std/Test.sol";
 import {TestLVRAuctionHook} from "./TestLVRAuctionHook.sol";
 import {AuctionLib} from "../src/libraries/AuctionLib.sol";
 import {Hooks} from "@uniswap/v4-core/libraries/Hooks.sol";
+import {IPoolManager} from "@uniswap/v4-core/interfaces/IPoolManager.sol";
+import {IPriceOracle} from "../src/interfaces/IPriceOracle.sol";
 
 import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/interfaces/IHooks.sol";
-import {SwapParams} from "@uniswap/v4-core/types/PoolOperation.sol";
+import {SwapParams, ModifyLiquidityParams} from "@uniswap/v4-core/types/PoolOperation.sol";
 import {BalanceDelta} from "@uniswap/v4-core/types/BalanceDelta.sol";
 
 // Mock contracts for testing
@@ -101,7 +103,7 @@ contract MockPriceOracle {
  * @title LVR Auction Hook 100% Coverage Tests
  * @notice Additional tests to achieve 100% coverage for all contracts
  */
-contract LVR Auction Hook100CoverageTest is Test {
+contract LVRAuctionHook100CoverageTest is Test {
     using PoolIdLibrary for PoolKey;
 
     // Allow receiving ETH for testing

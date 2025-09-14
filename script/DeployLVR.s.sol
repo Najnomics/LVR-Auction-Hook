@@ -36,7 +36,7 @@ contract DeployLVR is Script {
     
     // Common token addresses
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
-    address public constant USDC = 0xA0b86a33E6417C8a9bbE78fE047cE5c17Aed0ADA;
+    address public constant USDC = 0xA0b86a33E6417c8a9bbe78fe047ce5C17aEd0Ada;
     address public constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
 
     function run() external {

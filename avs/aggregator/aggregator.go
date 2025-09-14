@@ -2,7 +2,6 @@ package aggregator
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -12,87 +11,71 @@ import (
 
 	"github.com/Layr-Labs/eigensdk-go/chainio/clients/eth"
 	"github.com/Layr-Labs/eigensdk-go/logging"
-	"github.com/Layr-Labs/eigensdk-go/metrics"
-	"github.com/Layr-Labs/eigensdk-go/nodeapi"
 	"github.com/Layr-Labs/eigensdk-go/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/lvr-auction-hook/avs/pkg/avsregistry"
 )
 
-const (
-	// SemVer is the semantic version of the aggregator
-	SemVer = "0.0.1"
-)
-
 type Aggregator struct {
-	config      Config
-	logger      logging.Logger
-	ethClient   eth.Client
-	metricsReg  *prometheus.Registry
-	metrics     metrics.Metrics
-	nodeApi     *nodeapi.NodeApi
+	config     Config
+	logger     logging.Logger
+	ethClient  eth.Client
+	metricsReg *prometheus.Registry
 
 	avsWriter avsregistry.AvsRegistryChainWriter
 	avsReader avsregistry.AvsRegistryChainReader
 
-	// Aggregator specific fields
-	taskResponses    map[uint32][]SignedAuctionTaskResponse
-	taskResponsesMux sync.RWMutex
-	quorumThreshold  types.ThresholdPercentage
+	// Task aggregation
+	tasksMutex sync.RWMutex
+	tasks      map[uint32]*TaskInfo
+	httpServer *http.Server
 }
 
 type Config struct {
-	EcdsaPrivateKeyStorePath      string `json:"ecdsa_private_key_store_path"`
+	ServerIpPortAddr              string `json:"server_ip_port_address"`
 	EthRpcUrl                     string `json:"eth_rpc_url"`
-	EthWsUrl                      string `json:"eth_ws_url"`
 	RegistryCoordinatorAddress    string `json:"registry_coordinator_address"`
 	OperatorStateRetrieverAddress string `json:"operator_state_retriever_address"`
+	AggregatorPrivateKeyPath      string `json:"aggregator_private_key_path"`
 	EigenMetricsIpPortAddress     string `json:"eigen_metrics_ip_port_address"`
 	EnableMetrics                 bool   `json:"enable_metrics"`
-	NodeApiIpPortAddress          string `json:"node_api_ip_port_address"`
-	EnableNodeApi                 bool   `json:"enable_node_api"`
-	AggregatorServerIpPortAddr    string `json:"aggregator_server_ip_port_address"`
-	QuorumThreshold               uint32 `json:"quorum_threshold"`
 }
 
-type AuctionTask struct {
-	PoolId                      common.Hash    `json:"poolId"`
-	BlockNumber                 uint32         `json:"blockNumber"`
-	TaskCreatedBlock            uint32         `json:"taskCreatedBlock"`
-	QuorumNumbers               types.QuorumNums `json:"quorumNumbers"`
-	QuorumThresholdPercentage   types.ThresholdPercentage `json:"quorumThresholdPercentage"`
+type TaskInfo struct {
+	TaskIndex                 uint32                                `json:"taskIndex"`
+	PoolId                    common.Hash                           `json:"poolId"`
+	TaskCreatedBlock          uint32                                `json:"taskCreatedBlock"`
+	QuorumNumbers             types.QuorumNums                      `json:"quorumNumbers"`
+	QuorumThresholdPercentage types.ThresholdPercentage             `json:"quorumThresholdPercentage"`
+	TaskResponses             map[types.OperatorId]TaskResponse     `json:"taskResponses"`
+	TaskResponsesInfo         map[types.OperatorId]TaskResponseInfo `json:"taskResponsesInfo"`
+	IsCompleted               bool                                  `json:"isCompleted"`
+	CreatedAt                 time.Time                             `json:"createdAt"`
 }
 
-type AuctionTaskResponse struct {
+type TaskResponse struct {
 	ReferenceTaskIndex uint32         `json:"referenceTaskIndex"`
 	Winner             common.Address `json:"winner"`
 	WinningBid         *big.Int       `json:"winningBid"`
 	TotalBids          uint32         `json:"totalBids"`
 }
 
-type SignedAuctionTaskResponse struct {
-	AuctionTaskResponse
-	BlsSignature types.Signature `json:"blsSignature"`
+type TaskResponseInfo struct {
+	TaskResponse TaskResponse     `json:"taskResponse"`
+	BlsSignature types.Signature  `json:"blsSignature"`
 	OperatorId   types.OperatorId `json:"operatorId"`
 }
 
-type TaskResponseInfo struct {
-	TaskResponse *AuctionTaskResponse
-	BlsSignature types.Signature
-	OperatorId   types.OperatorId
+type SignedTaskResponse struct {
+	TaskResponse TaskResponse     `json:"taskResponse"`
+	BlsSignature types.Signature  `json:"blsSignature"`
+	OperatorId   types.OperatorId `json:"operatorId"`
 }
 
 func NewAggregator(config Config, logger logging.Logger) (*Aggregator, error) {
-	var logLevel logging.LogLevel
-	if config.EnableMetrics {
-		logLevel = logging.Development
-	} else {
-		logLevel = logging.Production
-	}
-
 	logger = logger.With("component", "aggregator")
 
 	ethClient, err := eth.NewClient(config.EthRpcUrl)
@@ -100,15 +83,7 @@ func NewAggregator(config Config, logger logging.Logger) (*Aggregator, error) {
 		return nil, fmt.Errorf("failed to create eth client: %w", err)
 	}
 
-	operatorEcdsaPrivateKey, err := crypto.LoadECDSA(config.EcdsaPrivateKeyStorePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load aggregator ecdsa private key: %w", err)
-	}
-
-	operatorAddr := crypto.PubkeyToAddress(operatorEcdsaPrivateKey.PublicKey)
-	logger.Info("Aggregator address", "address", operatorAddr.Hex())
-
-	// Create AVS clients
+	// Create AVS registry clients
 	avsReader, err := avsregistry.NewAvsRegistryChainReader(
 		common.HexToAddress(config.RegistryCoordinatorAddress),
 		common.HexToAddress(config.OperatorStateRetrieverAddress),
@@ -119,47 +94,26 @@ func NewAggregator(config Config, logger logging.Logger) (*Aggregator, error) {
 		return nil, fmt.Errorf("failed to create avs registry chain reader: %w", err)
 	}
 
-	avsWriter, err := avsregistry.NewAvsRegistryChainWriter(
-		common.HexToAddress(config.RegistryCoordinatorAddress),
-		common.HexToAddress(config.OperatorStateRetrieverAddress),
-		ethClient,
-		operatorEcdsaPrivateKey,
-		logger,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create avs registry chain writer: %w", err)
-	}
+	// For the writer, we'd need the aggregator's private key
+	// For now, we'll skip this as it requires key management
+	var avsWriter avsregistry.AvsRegistryChainWriter
 
 	// Create metrics registry
 	var metricsReg *prometheus.Registry
-	var eigenMetrics metrics.Metrics
 	if config.EnableMetrics {
 		metricsReg = prometheus.NewRegistry()
-		eigenMetrics = metrics.NewPrometheusMetrics(metricsReg, "lvr-auction-hook", logger)
-		eigenMetrics.Start(context.Background(), config.EigenMetricsIpPortAddress)
 	} else {
 		metricsReg = prometheus.NewRegistry()
-		eigenMetrics = metrics.NewNoopMetrics()
-	}
-
-	// Create node API
-	var nodeApi *nodeapi.NodeApi
-	if config.EnableNodeApi {
-		nodeApi = nodeapi.NewNodeApi("lvr-auction-hook-aggregator", SemVer, config.NodeApiIpPortAddress, logger)
-		go nodeApi.Start()
 	}
 
 	aggregator := &Aggregator{
-		config:           config,
-		logger:           logger,
-		ethClient:        ethClient,
-		metricsReg:       metricsReg,
-		metrics:          eigenMetrics,
-		nodeApi:          nodeApi,
-		avsWriter:        *avsWriter,
-		avsReader:        *avsReader,
-		taskResponses:    make(map[uint32][]SignedAuctionTaskResponse),
-		quorumThreshold:  types.ThresholdPercentage(config.QuorumThreshold),
+		config:     config,
+		logger:     logger,
+		ethClient:  ethClient,
+		metricsReg: metricsReg,
+		avsWriter:  avsWriter,
+		avsReader:  *avsReader,
+		tasks:      make(map[uint32]*TaskInfo),
 	}
 
 	return aggregator, nil
@@ -168,81 +122,188 @@ func NewAggregator(config Config, logger logging.Logger) (*Aggregator, error) {
 func (a *Aggregator) Start(ctx context.Context) error {
 	a.logger.Info("Starting aggregator")
 
-	// Start HTTP server for receiving task responses
-	go a.startHTTPServer(ctx)
+	// Start HTTP server for receiving operator responses
+	go a.startHttpServer()
 
 	// Start task processing
-	go a.processTaskResponses(ctx)
+	go a.processAggregatedTasks(ctx)
+
+	// Start listening for new tasks from the service manager
+	go a.listenForNewTasks(ctx)
 
 	// Keep the aggregator running
 	<-ctx.Done()
 	return nil
 }
 
-func (a *Aggregator) startHTTPServer(ctx context.Context) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/submit-response", a.handleTaskResponseSubmission)
-	mux.HandleFunc("/health", a.handleHealthCheck)
+func (a *Aggregator) startHttpServer() {
+	router := mux.NewRouter()
 
-	server := &http.Server{
-		Addr:    a.config.AggregatorServerIpPortAddr,
-		Handler: mux,
+	// Health check endpoint
+	router.HandleFunc("/health", a.healthHandler).Methods("GET")
+
+	// Task response endpoint
+	router.HandleFunc("/task-response", a.taskResponseHandler).Methods("POST")
+
+	// Task status endpoint
+	router.HandleFunc("/task/{taskIndex}", a.taskStatusHandler).Methods("GET")
+
+	a.httpServer = &http.Server{
+		Addr:    a.config.ServerIpPortAddr,
+		Handler: router,
 	}
 
-	a.logger.Info("Starting HTTP server", "addr", a.config.AggregatorServerIpPortAddr)
-
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			a.logger.Error("HTTP server error", "error", err)
-		}
-	}()
-
-	<-ctx.Done()
-	server.Shutdown(context.Background())
+	a.logger.Info("Starting HTTP server", "address", a.config.ServerIpPortAddr)
+	if err := a.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		a.logger.Error("HTTP server error", "error", err)
+	}
 }
 
-func (a *Aggregator) handleTaskResponseSubmission(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+func (a *Aggregator) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "healthy"})
+}
 
-	var signedResponse SignedAuctionTaskResponse
+func (a *Aggregator) taskResponseHandler(w http.ResponseWriter, r *http.Request) {
+	var signedResponse SignedTaskResponse
 	if err := json.NewDecoder(r.Body).Decode(&signedResponse); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		a.logger.Error("Failed to decode task response", "error", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
-	// Store the response
-	a.taskResponsesMux.Lock()
-	a.taskResponses[signedResponse.ReferenceTaskIndex] = append(
-		a.taskResponses[signedResponse.ReferenceTaskIndex],
-		signedResponse,
-	)
-	a.taskResponsesMux.Unlock()
 
 	a.logger.Info("Received task response",
-		"taskIndex", signedResponse.ReferenceTaskIndex,
-		"operatorId", signedResponse.OperatorId.Hex(),
-		"winner", signedResponse.Winner.Hex(),
-		"winningBid", signedResponse.WinningBid.String(),
+		"taskIndex", signedResponse.TaskResponse.ReferenceTaskIndex,
+		"operatorId", signedResponse.OperatorId.String(),
+		"winner", signedResponse.TaskResponse.Winner.Hex(),
+		"winningBid", signedResponse.TaskResponse.WinningBid.String(),
 	)
 
+	// Process the task response
+	if err := a.processTaskResponse(signedResponse); err != nil {
+		a.logger.Error("Failed to process task response", "error", err)
+		http.Error(w, "Failed to process response", http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 }
 
-func (a *Aggregator) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+func (a *Aggregator) taskStatusHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	taskIndex := vars["taskIndex"]
+
+	// Convert taskIndex to uint32 and get task info
+	// For simplicity, we'll just return a status
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":    "healthy",
-		"timestamp": time.Now().Format(time.RFC3339),
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"taskIndex": taskIndex,
+		"status":    "processing",
 	})
 }
 
-func (a *Aggregator) processTaskResponses(ctx context.Context) {
-	a.logger.Info("Starting task response processor")
+func (a *Aggregator) processTaskResponse(signedResponse SignedTaskResponse) error {
+	taskIndex := signedResponse.TaskResponse.ReferenceTaskIndex
 
+	a.tasksMutex.Lock()
+	defer a.tasksMutex.Unlock()
+
+	task, exists := a.tasks[taskIndex]
+	if !exists {
+		// Create new task if it doesn't exist
+		task = &TaskInfo{
+			TaskIndex:         taskIndex,
+			TaskResponses:     make(map[types.OperatorId]TaskResponse),
+			TaskResponsesInfo: make(map[types.OperatorId]TaskResponseInfo),
+			IsCompleted:       false,
+			CreatedAt:         time.Now(),
+		}
+		a.tasks[taskIndex] = task
+	}
+
+	// Add the response
+	task.TaskResponses[signedResponse.OperatorId] = signedResponse.TaskResponse
+	task.TaskResponsesInfo[signedResponse.OperatorId] = TaskResponseInfo{
+		TaskResponse: signedResponse.TaskResponse,
+		BlsSignature: signedResponse.BlsSignature,
+		OperatorId:   signedResponse.OperatorId,
+	}
+
+	a.logger.Info("Task response added",
+		"taskIndex", taskIndex,
+		"totalResponses", len(task.TaskResponses),
+	)
+
+	// Check if we have enough responses to aggregate
+	if a.shouldAggregateTask(task) {
+		go a.aggregateAndSubmitTask(task)
+	}
+
+	return nil
+}
+
+func (a *Aggregator) shouldAggregateTask(task *TaskInfo) bool {
+	// Simple threshold: aggregate when we have at least 2 responses
+	// In a real implementation, this would check against quorum requirements
+	return len(task.TaskResponses) >= 2 && !task.IsCompleted
+}
+
+func (a *Aggregator) aggregateAndSubmitTask(task *TaskInfo) {
+	a.logger.Info("Aggregating task responses", "taskIndex", task.TaskIndex)
+
+	// Simple aggregation: find the most common winner and highest bid
+	winnerVotes := make(map[common.Address]int)
+	highestBid := big.NewInt(0)
+	var finalWinner common.Address
+	totalBids := uint32(0)
+
+	for _, response := range task.TaskResponses {
+		winnerVotes[response.Winner]++
+		if response.WinningBid.Cmp(highestBid) > 0 {
+			highestBid = response.WinningBid
+		}
+		totalBids += response.TotalBids
+	}
+
+	// Find winner with most votes
+	maxVotes := 0
+	for winner, votes := range winnerVotes {
+		if votes > maxVotes {
+			maxVotes = votes
+			finalWinner = winner
+		}
+	}
+
+	aggregatedResponse := TaskResponse{
+		ReferenceTaskIndex: task.TaskIndex,
+		Winner:             finalWinner,
+		WinningBid:         highestBid,
+		TotalBids:          totalBids / uint32(len(task.TaskResponses)), // Average
+	}
+
+	a.logger.Info("Aggregated task response",
+		"taskIndex", task.TaskIndex,
+		"winner", finalWinner.Hex(),
+		"winningBid", highestBid.String(),
+		"totalResponses", len(task.TaskResponses),
+	)
+
+	// Mark task as completed
+	a.tasksMutex.Lock()
+	task.IsCompleted = true
+	a.tasksMutex.Unlock()
+
+	// In a real implementation, this would:
+	// 1. Verify BLS signatures
+	// 2. Check quorum requirements
+	// 3. Submit aggregated response to service manager
+	// 4. Handle potential challenges
+
+	a.logger.Info("Task aggregation completed", "taskIndex", task.TaskIndex)
+}
+
+func (a *Aggregator) processAggregatedTasks(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
@@ -251,82 +312,66 @@ func (a *Aggregator) processTaskResponses(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			a.checkAndProcessCompletedTasks()
+			a.cleanupOldTasks()
 		}
 	}
 }
 
-func (a *Aggregator) checkAndProcessCompletedTasks() {
-	a.taskResponsesMux.RLock()
-	defer a.taskResponsesMux.RUnlock()
+func (a *Aggregator) cleanupOldTasks() {
+	a.tasksMutex.Lock()
+	defer a.tasksMutex.Unlock()
 
-	for taskIndex, responses := range a.taskResponses {
-		if len(responses) >= int(a.quorumThreshold) {
-			a.processCompletedTask(taskIndex, responses)
+	cutoff := time.Now().Add(-1 * time.Hour) // Clean tasks older than 1 hour
+
+	for taskIndex, task := range a.tasks {
+		if task.CreatedAt.Before(cutoff) {
+			delete(a.tasks, taskIndex)
+			a.logger.Debug("Cleaned up old task", "taskIndex", taskIndex)
 		}
 	}
 }
 
-func (a *Aggregator) processCompletedTask(taskIndex uint32, responses []SignedAuctionTaskResponse) {
-	a.logger.Info("Processing completed task",
-		"taskIndex", taskIndex,
-		"responseCount", len(responses),
-	)
-
-	// Find the most common response (consensus)
-	responseCounts := make(map[string]int)
-	for _, response := range responses {
-		responseKey := fmt.Sprintf("%s-%s-%d",
-			response.Winner.Hex(),
-			response.WinningBid.String(),
-			response.TotalBids,
-		)
-		responseCounts[responseKey]++
-	}
-
-	// Find the response with the highest count
-	var consensusResponse *SignedAuctionTaskResponse
-	maxCount := 0
-	for _, response := range responses {
-		responseKey := fmt.Sprintf("%s-%s-%d",
-			response.Winner.Hex(),
-			response.WinningBid.String(),
-			response.TotalBids,
-		)
-		if responseCounts[responseKey] > maxCount {
-			maxCount = responseCounts[responseKey]
-			consensusResponse = &response
-		}
-	}
-
-	if consensusResponse != nil {
-		a.logger.Info("Task consensus reached",
-			"taskIndex", taskIndex,
-			"consensusCount", maxCount,
-			"totalResponses", len(responses),
-			"winner", consensusResponse.Winner.Hex(),
-			"winningBid", consensusResponse.WinningBid.String(),
-		)
-
-		// Here you would submit the consensus result to the smart contract
-		// For now, we'll just log it
-		a.submitConsensusToContract(taskIndex, consensusResponse)
-	}
-}
-
-func (a *Aggregator) submitConsensusToContract(taskIndex uint32, consensus *SignedAuctionTaskResponse) {
-	a.logger.Info("Submitting consensus to contract",
-		"taskIndex", taskIndex,
-		"winner", consensus.Winner.Hex(),
-		"winningBid", consensus.WinningBid.String(),
-	)
+func (a *Aggregator) listenForNewTasks(ctx context.Context) {
+	a.logger.Info("Starting to listen for new tasks")
 
 	// In a real implementation, this would:
-	// 1. Verify BLS signatures
-	// 2. Submit the consensus result to the LVR Auction Service Manager
-	// 3. Handle any errors or retries
-	
-	// For now, we'll simulate this
-	time.Sleep(100 * time.Millisecond)
-	a.logger.Info("Consensus submitted successfully")
+	// 1. Subscribe to NewAuctionTaskCreated events from service manager
+	// 2. Initialize task tracking
+	// 3. Set up timeouts for task responses
+
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.logger.Debug("Listening for new auction tasks...")
+		}
+	}
+}
+
+// GetTaskStatus returns the status of a specific task
+func (a *Aggregator) GetTaskStatus(taskIndex uint32) (*TaskInfo, bool) {
+	a.tasksMutex.RLock()
+	defer a.tasksMutex.RUnlock()
+
+	task, exists := a.tasks[taskIndex]
+	return task, exists
+}
+
+// GetActiveTasks returns all active tasks
+func (a *Aggregator) GetActiveTasks() map[uint32]*TaskInfo {
+	a.tasksMutex.RLock()
+	defer a.tasksMutex.RUnlock()
+
+	activeTasks := make(map[uint32]*TaskInfo)
+	for taskIndex, task := range a.tasks {
+		if !task.IsCompleted {
+			activeTasks[taskIndex] = task
+		}
+	}
+
+	return activeTasks
 }
