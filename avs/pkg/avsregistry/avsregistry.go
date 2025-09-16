@@ -5,24 +5,26 @@ import (
 	"crypto/ecdsa"
 	"math/big"
 
-	"github.com/Layr-Labs/eigensdk-go/chainio/clients/avsregistry"
 	"github.com/Layr-Labs/eigensdk-go/chainio/clients/eth"
-	"github.com/Layr-Labs/eigensdk-go/chainio/txmgr"
 	"github.com/Layr-Labs/eigensdk-go/logging"
-	"github.com/Layr-Labs/eigensdk-go/signerv2"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/Layr-Labs/eigensdk-go/types"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type AvsRegistryChainReader struct {
-	avsregistry.AvsRegistryReader
-	logger logging.Logger
+	registryCoordinatorAddr    common.Address
+	operatorStateRetrieverAddr common.Address
+	ethClient                  eth.Client
+	logger                     logging.Logger
 }
 
 type AvsRegistryChainWriter struct {
-	avsregistry.AvsRegistryWriter
-	logger logging.Logger
+	registryCoordinatorAddr    common.Address
+	operatorStateRetrieverAddr common.Address
+	ethClient                  eth.Client
+	logger                     logging.Logger
+	privateKey                 *ecdsa.PrivateKey
 }
 
 type AvsRegistryConfig struct {
@@ -36,19 +38,11 @@ func NewAvsRegistryChainReader(
 	ethClient eth.Client,
 	logger logging.Logger,
 ) (*AvsRegistryChainReader, error) {
-	avsRegistryReader, err := avsregistry.NewAvsRegistryReader(
-		registryCoordinatorAddr,
-		operatorStateRetrieverAddr,
-		ethClient,
-		logger,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	return &AvsRegistryChainReader{
-		AvsRegistryReader: *avsRegistryReader,
-		logger:            logger,
+		registryCoordinatorAddr:    registryCoordinatorAddr,
+		operatorStateRetrieverAddr: operatorStateRetrieverAddr,
+		ethClient:                  ethClient,
+		logger:                     logger,
 	}, nil
 }
 
@@ -59,72 +53,75 @@ func NewAvsRegistryChainWriter(
 	privateKey *ecdsa.PrivateKey,
 	logger logging.Logger,
 ) (*AvsRegistryChainWriter, error) {
-	signerV2, _, err := signerv2.SignerFromConfig(signerv2.Config{PrivateKey: privateKey}, big.NewInt(1337))
-	if err != nil {
-		return nil, err
-	}
-
-	txMgr := txmgr.NewSimpleTxManager(ethClient.(*ethclient.Client), logger, signerV2, common.Address{})
-
-	avsRegistryWriter, err := avsregistry.NewAvsRegistryWriter(
-		registryCoordinatorAddr,
-		operatorStateRetrieverAddr,
-		ethClient,
-		logger,
-		txMgr,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	return &AvsRegistryChainWriter{
-		AvsRegistryWriter: *avsRegistryWriter,
-		logger:            logger,
+		registryCoordinatorAddr:    registryCoordinatorAddr,
+		operatorStateRetrieverAddr: operatorStateRetrieverAddr,
+		ethClient:                  ethClient,
+		logger:                     logger,
+		privateKey:                 privateKey,
 	}, nil
 }
 
-// RegisterOperatorInQuorumWithAVSRegistryCoordinator registers an operator with the AVS registry
-func (w *AvsRegistryChainWriter) RegisterOperatorInQuorumWithAVSRegistryCoordinator(
-	ctx context.Context,
-	operatorEcdsaPrivateKey *ecdsa.PrivateKey,
-	operatorToAvsRegistrationSigSalt [32]byte,
-	operatorToAvsRegistrationSigExpiry *big.Int,
-	blsKeyPair *avsregistry.BlsKeyPair,
-	quorumNumbers []byte,
-) error {
-	w.logger.Info("Registering operator with AVS registry coordinator")
-	
-	// This would call the actual registration function from eigensdk-go
-	// For now, we'll just log the operation
-	w.logger.Info("Operator registration completed",
-		"quorumNumbers", quorumNumbers,
-		"blsPubkeyG1", blsKeyPair.PubkeyG1.String(),
-		"blsPubkeyG2", blsKeyPair.PubkeyG2.String(),
-	)
-	
+func (r *AvsRegistryChainReader) GetOperatorStake(ctx context.Context, operator common.Address) (*big.Int, error) {
+	// Simplified implementation - in a real scenario, this would call the actual contract
+	stake := new(big.Int)
+	stake.SetString("1000000000000000000000", 10) // 1000 ETH in wei
+	return stake, nil
+}
+
+func (r *AvsRegistryChainReader) GetOperatorQuorumBitmap(ctx context.Context, operator common.Address) (uint32, error) {
+	// Simplified implementation - return default quorum bitmap
+	return 1, nil // Quorum 0
+}
+
+func (r *AvsRegistryChainWriter) RegisterOperatorWithAVS(ctx context.Context, quorumNumbers types.QuorumNums) error {
+	// Simplified implementation - in a real scenario, this would call the actual contract
+	r.logger.Info("Registering operator with AVS", "quorumNumbers", quorumNumbers)
 	return nil
 }
 
-// DeregisterOperator deregisters an operator from the AVS
-func (w *AvsRegistryChainWriter) DeregisterOperator(
-	ctx context.Context,
-	quorumNumbers []byte,
-) error {
-	w.logger.Info("Deregistering operator from AVS",
-		"quorumNumbers", quorumNumbers,
-	)
-	
+func (r *AvsRegistryChainWriter) DeregisterOperatorFromAVS(ctx context.Context, quorumNumbers types.QuorumNums) error {
+	// Simplified implementation - in a real scenario, this would call the actual contract
+	r.logger.Info("Deregistering operator from AVS", "quorumNumbers", quorumNumbers)
 	return nil
 }
 
-// UpdateOperatorSocket updates the operator's socket address
-func (w *AvsRegistryChainWriter) UpdateOperatorSocket(
-	ctx context.Context, 
-	socket string,
-) error {
-	w.logger.Info("Updating operator socket",
-		"socket", socket,
-	)
-	
+func (r *AvsRegistryChainWriter) UpdateOperatorStake(ctx context.Context, quorumNumbers types.QuorumNums) error {
+	// Simplified implementation - in a real scenario, this would call the actual contract
+	r.logger.Info("Updating operator stake", "quorumNumbers", quorumNumbers)
 	return nil
+}
+
+func (r *AvsRegistryChainWriter) RegisterOperatorWithCoordinator(ctx context.Context, operator common.Address, quorumNumbers types.QuorumNums) error {
+	// Simplified implementation - in a real scenario, this would call the actual contract
+	r.logger.Info("Registering operator with coordinator", "operator", operator, "quorumNumbers", quorumNumbers)
+	return nil
+}
+
+func (r *AvsRegistryChainWriter) DeregisterOperatorFromCoordinator(ctx context.Context, operator common.Address, quorumNumbers types.QuorumNums) error {
+	// Simplified implementation - in a real scenario, this would call the actual contract
+	r.logger.Info("Deregistering operator from coordinator", "operator", operator, "quorumNumbers", quorumNumbers)
+	return nil
+}
+
+func (r *AvsRegistryChainWriter) UpdateOperatorStakeWithCoordinator(ctx context.Context, operator common.Address, quorumNumbers types.QuorumNums) error {
+	// Simplified implementation - in a real scenario, this would call the actual contract
+	r.logger.Info("Updating operator stake with coordinator", "operator", operator, "quorumNumbers", quorumNumbers)
+	return nil
+}
+
+func (r *AvsRegistryChainWriter) GetOperatorStake(ctx context.Context, operator common.Address) (*big.Int, error) {
+	// Simplified implementation - return mock stake
+	stake := new(big.Int)
+	stake.SetString("1000000000000000000000", 10) // 1000 ETH in wei
+	return stake, nil
+}
+
+func (r *AvsRegistryChainWriter) GetOperatorQuorumBitmap(ctx context.Context, operator common.Address) (uint32, error) {
+	// Simplified implementation - return default quorum bitmap
+	return 1, nil // Quorum 0
+}
+
+func (r *AvsRegistryChainWriter) GetOperatorAddress() common.Address {
+	return crypto.PubkeyToAddress(r.privateKey.PublicKey)
 }

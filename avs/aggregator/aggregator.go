@@ -2,6 +2,7 @@ package aggregator
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
@@ -12,11 +13,12 @@ import (
 	"github.com/Layr-Labs/eigensdk-go/chainio/clients/eth"
 	"github.com/Layr-Labs/eigensdk-go/logging"
 	"github.com/Layr-Labs/eigensdk-go/types"
+	"github.com/Layr-Labs/eigensdk-go/crypto/bls"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/lvr-auction-hook/avs/pkg/avsregistry"
+	"github.com/Najnomics/LVR-Auction-Hook/avs/pkg/avsregistry"
 )
 
 type Aggregator struct {
@@ -49,7 +51,7 @@ type TaskInfo struct {
 	PoolId                    common.Hash                           `json:"poolId"`
 	TaskCreatedBlock          uint32                                `json:"taskCreatedBlock"`
 	QuorumNumbers             types.QuorumNums                      `json:"quorumNumbers"`
-	QuorumThresholdPercentage types.ThresholdPercentage             `json:"quorumThresholdPercentage"`
+	QuorumThresholdPercentage types.QuorumThresholdPercentage             `json:"quorumThresholdPercentage"`
 	TaskResponses             map[types.OperatorId]TaskResponse     `json:"taskResponses"`
 	TaskResponsesInfo         map[types.OperatorId]TaskResponseInfo `json:"taskResponsesInfo"`
 	IsCompleted               bool                                  `json:"isCompleted"`
@@ -65,13 +67,13 @@ type TaskResponse struct {
 
 type TaskResponseInfo struct {
 	TaskResponse TaskResponse     `json:"taskResponse"`
-	BlsSignature types.Signature  `json:"blsSignature"`
+	BlsSignature *bls.Signature  `json:"blsSignature"`
 	OperatorId   types.OperatorId `json:"operatorId"`
 }
 
 type SignedTaskResponse struct {
 	TaskResponse TaskResponse     `json:"taskResponse"`
-	BlsSignature types.Signature  `json:"blsSignature"`
+	BlsSignature *bls.Signature  `json:"blsSignature"`
 	OperatorId   types.OperatorId `json:"operatorId"`
 }
 
@@ -174,7 +176,7 @@ func (a *Aggregator) taskResponseHandler(w http.ResponseWriter, r *http.Request)
 
 	a.logger.Info("Received task response",
 		"taskIndex", signedResponse.TaskResponse.ReferenceTaskIndex,
-		"operatorId", signedResponse.OperatorId.String(),
+		"operatorId", hex.EncodeToString(signedResponse.OperatorId[:]),
 		"winner", signedResponse.TaskResponse.Winner.Hex(),
 		"winningBid", signedResponse.TaskResponse.WinningBid.String(),
 	)
@@ -275,7 +277,7 @@ func (a *Aggregator) aggregateAndSubmitTask(task *TaskInfo) {
 		}
 	}
 
-	aggregatedResponse := TaskResponse{
+	_ = TaskResponse{
 		ReferenceTaskIndex: task.TaskIndex,
 		Winner:             finalWinner,
 		WinningBid:         highestBid,

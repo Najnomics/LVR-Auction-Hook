@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/Layr-Labs/eigensdk-go/logging"
-	"github.com/lvr-auction-hook/avs/aggregator"
+	"github.com/Najnomics/LVR-Auction-Hook/avs/aggregator"
 )
 
 var (
@@ -64,16 +64,12 @@ func loadConfig(path string) (aggregator.Config, error) {
 	// For now, return a default config
 	// In a real implementation, you would load from YAML/JSON
 	return aggregator.Config{
-		EcdsaPrivateKeyStorePath:      "keys/aggregator.ecdsa.key.json",
+		AggregatorPrivateKeyPath:      "keys/aggregator.ecdsa.key.json",
 		EthRpcUrl:                     "http://localhost:8545",
-		EthWsUrl:                      "ws://localhost:8546",
 		RegistryCoordinatorAddress:    "0x0000000000000000000000000000000000000000",
 		OperatorStateRetrieverAddress: "0x0000000000000000000000000000000000000000",
+		ServerIpPortAddr:              "0.0.0.0:9090",
 		EigenMetricsIpPortAddress:     "0.0.0.0:9091",
 		EnableMetrics:                 true,
-		NodeApiIpPortAddress:          "0.0.0.0:8080",
-		EnableNodeApi:                 true,
-		AggregatorServerIpPortAddr:    "0.0.0.0:9090",
-		QuorumThreshold:               67, // 67% threshold
 	}, nil
 }

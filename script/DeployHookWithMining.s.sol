@@ -3,7 +3,7 @@ pragma solidity ^0.8.26;
 
 import {Script} from "forge-std/Script.sol";
 import {console} from "forge-std/console.sol";
-import {LVRAuctionHook} from "../src/LVRAuctionHook.sol";
+import {LVRAuctionHook} from "../src/hooks/LVRAuctionHook.sol";
 import {HookMiner} from "../src/utils/HookMiner.sol";
 import {IPoolManager} from "@uniswap/v4-core/interfaces/IPoolManager.sol";
 import {IAVSDirectory} from "../src/interfaces/IAVSDirectory.sol";

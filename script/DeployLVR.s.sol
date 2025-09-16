@@ -4,11 +4,11 @@ pragma solidity ^0.8.26;
 import {Script, console} from "forge-std/Script.sol";
 import {Currency} from "@uniswap/v4-core/types/Currency.sol";
 
-import {LVRAuctionHook} from "../src/LVRAuctionHook.sol";
-import {LVRAuctionServiceManager} from "../src/LVRAuctionServiceManager.sol";
-import {ChainlinkPriceOracle} from "../src/ChainlinkPriceOracle.sol";
+import {LVRAuctionHook} from "../src/hooks/LVRAuctionHook.sol";
+// NOTE: LVRAuctionServiceManager moved to DevKit AVS at /avs-new/contracts/src/l1-contracts/
+import {ChainlinkPriceOracle} from "../src/oracles/ChainlinkPriceOracle.sol";
 import {IPriceOracle} from "../src/interfaces/IPriceOracle.sol";
-import {ProductionPriceFeedConfig} from "../src/ProductionPriceFeedConfig.sol";
+import {ProductionPriceFeedConfig} from "../src/config/ProductionPriceFeedConfig.sol";
 import {IAVSDirectory} from "../src/interfaces/IAVSDirectory.sol";
 import {IPoolManager} from "@uniswap/v4-core/interfaces/IPoolManager.sol";
 
@@ -77,15 +77,15 @@ contract DeployLVR is Script {
         return address(hook);
     }
     
+    // NOTE: Service manager deployment moved to DevKit AVS at /avs-new/
+    // Deploy using: forge script avs-new/contracts/script/DeployLVRL1Contracts.s.sol
     function _deployServiceManager() internal returns (address) {
-        console.log("Deploying LVRAuctionServiceManager...");
+        console.log("WARNING: Service Manager deployment moved to DevKit AVS");
+        console.log("Location: /avs-new/contracts/script/DeployLVRL1Contracts.s.sol");
+        console.log("Command: forge script avs-new/contracts/script/DeployLVRL1Contracts.s.sol");
         
-        LVRAuctionServiceManager manager = new LVRAuctionServiceManager(
-            IAVSDirectory(AVS_DIRECTORY)
-        );
-        
-        console.log("LVRAuctionServiceManager deployed at:", address(manager));
-        return address(manager);
+        // Return zero address to indicate AVS should be deployed separately
+        return address(0);
     }
     
     function _deployPriceOracle() internal returns (address) {

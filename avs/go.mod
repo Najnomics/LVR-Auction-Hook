@@ -1,4 +1,4 @@
-module github.com/lvr-auction-hook/avs
+module github.com/Najnomics/LVR-Auction-Hook/avs
 
 go 1.21
 

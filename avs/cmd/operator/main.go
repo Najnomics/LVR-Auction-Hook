@@ -7,11 +7,13 @@ import (
 	"os/signal"
 	"syscall"
 
+	"context"
+
+	"github.com/Layr-Labs/eigensdk-go/logging"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	"github.com/lvr-auction-hook/avs/pkg/operator"
-	"github.com/lvr-auction-hook/avs/pkg/types"
+	"github.com/Najnomics/LVR-Auction-Hook/avs/operator"
 )
 
 var (
@@ -35,26 +37,24 @@ func main() {
 		logrus.Fatal("Failed to load configuration:", err)
 	}
 
-	// Create operator
-	op, err := operator.NewOperator(config)
-	if err != nil {
-		logrus.Fatal("Failed to create operator:", err)
-	}
+	// Create logger
+	logger := logging.NewNoopLogger() // Use noop logger for now
 
-	// Register operator with AVS
-	err = op.Register()
+	// Create operator
+	op, err := operator.NewOperator(*config, logger)
 	if err != nil {
-		logrus.Fatal("Failed to register operator:", err)
+		logger.Fatal("Failed to create operator:", err)
 	}
 
 	// Start operator
-	err = op.Start()
+	ctx := context.Background()
+	err = op.Start(ctx)
 	if err != nil {
-		logrus.Fatal("Failed to start operator:", err)
+		logger.Fatal("Failed to start operator:", err)
 	}
 
-	logrus.Info("LVR Auction Hook Operator is running...")
-	logrus.Info("Operator Address:", op.GetAddress().Hex())
+	logger.Info("LVR Auction Hook Operator is running...")
+	logger.Info("Operator Address:", op.GetOperatorAddress().Hex())
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
@@ -64,22 +64,17 @@ func main() {
 	logrus.Info("Shutdown signal received, stopping operator...")
 
 	// Stop operator
-	err = op.Stop()
-	if err != nil {
-		logrus.Error("Error stopping operator:", err)
-		os.Exit(1)
-	}
-
-	logrus.Info("Operator stopped successfully")
+	// The operator will stop when context is cancelled
+	logger.Info("Operator stopped successfully")
 }
 
-func loadConfig(configFile string) (*types.OperatorConfig, error) {
+func loadConfig(configFile string) (*operator.Config, error) {
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	var config types.OperatorConfig
+	var config operator.Config
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)

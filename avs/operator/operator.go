@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Layr-Labs/eigensdk-go/chainio/clients/eth"
+	"github.com/Layr-Labs/eigensdk-go/crypto/bls"
 	"github.com/Layr-Labs/eigensdk-go/logging"
 	"github.com/Layr-Labs/eigensdk-go/metrics"
 	"github.com/Layr-Labs/eigensdk-go/nodeapi"
@@ -19,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/lvr-auction-hook/avs/pkg/avsregistry"
+	"github.com/Najnomics/LVR-Auction-Hook/avs/pkg/avsregistry"
 )
 
 const (
@@ -38,7 +39,7 @@ type Operator struct {
 	avsWriter avsregistry.AvsRegistryChainWriter
 	avsReader avsregistry.AvsRegistryChainReader
 
-	blsKeypair              *types.BlsKeyPair
+	blsKeypair              *bls.KeyPair
 	operatorId              types.OperatorId
 	operatorAddr            common.Address
 	operatorEcdsaPrivateKey *ecdsa.PrivateKey
@@ -65,11 +66,11 @@ type Config struct {
 }
 
 type AuctionTask struct {
-	PoolId                    common.Hash               `json:"poolId"`
-	BlockNumber               uint32                    `json:"blockNumber"`
-	TaskCreatedBlock          uint32                    `json:"taskCreatedBlock"`
-	QuorumNumbers             types.QuorumNums          `json:"quorumNumbers"`
-	QuorumThresholdPercentage types.ThresholdPercentage `json:"quorumThresholdPercentage"`
+	PoolId                    common.Hash                     `json:"poolId"`
+	BlockNumber               uint32                          `json:"blockNumber"`
+	TaskCreatedBlock          uint32                          `json:"taskCreatedBlock"`
+	QuorumNumbers             types.QuorumNums                `json:"quorumNumbers"`
+	QuorumThresholdPercentage types.QuorumThresholdPercentage `json:"quorumThresholdPercentage"`
 }
 
 type AuctionTaskResponse struct {
@@ -81,24 +82,17 @@ type AuctionTaskResponse struct {
 
 type SignedAuctionTaskResponse struct {
 	AuctionTaskResponse
-	BlsSignature types.Signature  `json:"blsSignature"`
+	BlsSignature *bls.Signature   `json:"blsSignature"`
 	OperatorId   types.OperatorId `json:"operatorId"`
 }
 
 type TaskResponseInfo struct {
 	TaskResponse *AuctionTaskResponse
-	BlsSignature types.Signature
+	BlsSignature *bls.Signature
 	OperatorId   types.OperatorId
 }
 
 func NewOperator(config Config, logger logging.Logger) (*Operator, error) {
-	var logLevel logging.LogLevel
-	if config.EnableMetrics {
-		logLevel = logging.Development
-	} else {
-		logLevel = logging.Production
-	}
-
 	logger = logger.With("component", "operator")
 
 	ethClient, err := eth.NewClient(config.EthRpcUrl)
@@ -114,12 +108,12 @@ func NewOperator(config Config, logger logging.Logger) (*Operator, error) {
 	operatorAddr := crypto.PubkeyToAddress(operatorEcdsaPrivateKey.PublicKey)
 	logger.Info("Operator address", "address", operatorAddr.Hex())
 
-	blsKeyPair, err := types.ReadBlsPrivateKeyFromFile(config.BlsPrivateKeyStorePath, "")
+	blsKeyPair, err := bls.ReadPrivateKeyFromFile(config.BlsPrivateKeyStorePath, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to read bls private key: %w", err)
 	}
 
-	operatorId := types.OperatorIdFromG1Pubkey(blsKeyPair.PubkeyG1)
+	operatorId := types.OperatorIdFromG1Pubkey(blsKeyPair.GetPubKeyG1())
 	logger.Info("Operator ID", "operatorId", hex.EncodeToString(operatorId[:]))
 
 	// Create AVS clients
@@ -149,8 +143,7 @@ func NewOperator(config Config, logger logging.Logger) (*Operator, error) {
 	var eigenMetrics metrics.Metrics
 	if config.EnableMetrics {
 		metricsReg = prometheus.NewRegistry()
-		eigenMetrics = metrics.NewPrometheusMetrics(metricsReg, "eigenlvr", logger)
-		eigenMetrics.Start(context.Background(), config.EigenMetricsIpPortAddress)
+		eigenMetrics = metrics.NewEigenMetrics("eigenlvr", config.EigenMetricsIpPortAddress, metricsReg, logger)
 	} else {
 		metricsReg = prometheus.NewRegistry()
 		eigenMetrics = metrics.NewNoopMetrics()
@@ -270,7 +263,7 @@ func (o *Operator) simulateTaskProcessing() {
 
 	taskResponseInfo := TaskResponseInfo{
 		TaskResponse: response,
-		BlsSignature: *blsSignature,
+		BlsSignature: blsSignature,
 		OperatorId:   o.operatorId,
 	}
 
@@ -334,6 +327,6 @@ func (o *Operator) GetOperatorAddress() common.Address {
 }
 
 // GetBlsPublicKey returns the operator's BLS public key
-func (o *Operator) GetBlsPublicKey() *types.G1Point {
-	return o.blsKeypair.PubkeyG1
+func (o *Operator) GetBlsPublicKey() *bls.G1Point {
+	return o.blsKeypair.GetPubKeyG1()
 }

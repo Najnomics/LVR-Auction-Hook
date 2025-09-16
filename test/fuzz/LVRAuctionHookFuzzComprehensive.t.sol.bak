@@ -1,0 +1,512 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+import {Test} from "forge-std/Test.sol";
+import {TestLVRAuctionHook} from "../mocks/TestLVRAuctionHook.sol";
+import {IPoolManager} from "@uniswap/v4-core/interfaces/IPoolManager.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/types/PoolId.sol";
+import {PoolKey} from "@uniswap/v4-core/types/PoolKey.sol";
+import {Currency} from "@uniswap/v4-core/types/Currency.sol";
+import {IHooks} from "@uniswap/v4-core/interfaces/IHooks.sol";
+import {BalanceDelta} from "@uniswap/v4-core/types/BalanceDelta.sol";
+import {BeforeSwapDelta} from "@uniswap/v4-core/types/BeforeSwapDelta.sol";
+import {ModifyLiquidityParams, SwapParams} from "@uniswap/v4-core/types/PoolOperation.sol";
+import {SimplePoolManager, MockAVSDirectory, MockPriceOracle} from "../mocks/SimpleMocks.sol";
+
+contract LVRAuctionHookFuzzComprehensiveTest is Test {
+    TestLVRAuctionHook public hook;
+    SimplePoolManager public poolManager;
+    MockAVSDirectory public avsDirectory;
+    MockPriceOracle public priceOracle;
+    
+    address public owner;
+    address public feeRecipient;
+    address public operator;
+    
+    Currency public token0;
+    Currency public token1;
+    PoolKey public key;
+    PoolId public poolId;
+    
+    function setUp() public {
+        owner = address(this);
+        feeRecipient = makeAddr("feeRecipient");
+        operator = makeAddr("operator");
+        
+        token0 = Currency.wrap(makeAddr("token0"));
+        token1 = Currency.wrap(makeAddr("token1"));
+        
+        poolManager = new SimplePoolManager();
+        avsDirectory = new MockAVSDirectory();
+        priceOracle = new MockPriceOracle();
+        
+        key = PoolKey({
+            currency0: token0,
+            currency1: token1,
+            fee: 3000,
+            tickSpacing: 60,
+            hooks: IHooks(address(0))
+        });
+        poolId = key.toId();
+        
+        hook = new TestLVRAuctionHook(
+            IPoolManager(address(poolManager)),
+            avsDirectory,
+            priceOracle,
+            feeRecipient,
+            100
+        );
+        
+        hook.setOperatorAuthorization(operator, true);
+        priceOracle.setPrice(token0, token1, 1e18);
+        vm.deal(address(hook), 100e18);
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: LIQUIDITY OPERATIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_BeforeAddLiquidity(int256 liquidityDelta, address user) public {
+        vm.assume(liquidityDelta >= 0);
+        vm.assume(user != address(0));
+        vm.assume(liquidityDelta <= type(int128).max);
+        
+        ModifyLiquidityParams memory params = ModifyLiquidityParams({
+            tickLower: -60,
+            tickUpper: 60,
+            liquidityDelta: liquidityDelta,
+            salt: bytes32(0)
+        });
+        
+        uint256 beforeTotal = hook.totalLiquidity(poolId);
+        uint256 beforeUser = hook.lpLiquidity(poolId, user);
+        
+        bytes4 selector = hook.beforeAddLiquidity(user, key, params, "");
+        
+        assertEq(selector, hook.beforeAddLiquidity.selector);
+        
+        if (liquidityDelta > 0) {
+            assertEq(hook.totalLiquidity(poolId), beforeTotal + uint256(liquidityDelta));
+            assertEq(hook.lpLiquidity(poolId, user), beforeUser + uint256(liquidityDelta));
+        } else {
+            assertEq(hook.totalLiquidity(poolId), beforeTotal);
+            assertEq(hook.lpLiquidity(poolId, user), beforeUser);
+        }
+    }
+    
+    function testFuzz_BeforeRemoveLiquidity(uint256 addAmount, uint256 removeAmount, address user) public {
+        vm.assume(user != address(0));
+        vm.assume(addAmount > 0 && addAmount <= uint256(int256(type(int128).max)));
+        vm.assume(removeAmount <= addAmount);
+        
+        // First add liquidity
+        ModifyLiquidityParams memory addParams = ModifyLiquidityParams({
+            tickLower: -60,
+            tickUpper: 60,
+            liquidityDelta: int256(addAmount),
+            salt: bytes32(0)
+        });
+        hook.beforeAddLiquidity(user, key, addParams, "");
+        
+        // Then remove liquidity
+        ModifyLiquidityParams memory removeParams = ModifyLiquidityParams({
+            tickLower: -60,
+            tickUpper: 60,
+            liquidityDelta: -int256(removeAmount),
+            salt: bytes32(0)
+        });
+        
+        bytes4 selector = hook.beforeRemoveLiquidity(user, key, removeParams, "");
+        
+        assertEq(selector, hook.beforeRemoveLiquidity.selector);
+        assertEq(hook.lpLiquidity(poolId, user), addAmount - removeAmount);
+        assertEq(hook.totalLiquidity(poolId), addAmount - removeAmount);
+    }
+    
+    function testFuzz_MultipleLiquidityProviders(uint8 numUsers, uint256 liquidityPerUser) public {
+        vm.assume(numUsers > 0 && numUsers <= 20);
+        vm.assume(liquidityPerUser > 0 && liquidityPerUser <= 1e24);
+        
+        uint256 totalExpected = 0;
+        
+        for (uint8 i = 0; i < numUsers; i++) {
+            address user = address(uint160(i + 1));
+            
+            ModifyLiquidityParams memory params = ModifyLiquidityParams({
+                tickLower: -60,
+                tickUpper: 60,
+                liquidityDelta: int256(liquidityPerUser),
+                salt: bytes32(0)
+            });
+            
+            hook.beforeAddLiquidity(user, key, params, "");
+            totalExpected += liquidityPerUser;
+            
+            assertEq(hook.lpLiquidity(poolId, user), liquidityPerUser);
+        }
+        
+        assertEq(hook.totalLiquidity(poolId), totalExpected);
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: SWAP OPERATIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_BeforeSwap(bool zeroForOne, int256 amountSpecified) public {
+        vm.assume(amountSpecified != 0);
+        vm.assume(amountSpecified >= type(int128).min && amountSpecified <= type(int128).max);
+        
+        SwapParams memory params = SwapParams({
+            zeroForOne: zeroForOne,
+            amountSpecified: amountSpecified,
+            sqrtPriceLimitX96: 0
+        });
+        
+        (bytes4 selector, BeforeSwapDelta delta, uint24 fee) = hook.beforeSwap(
+            address(this),
+            key,
+            params,
+            ""
+        );
+        
+        assertEq(selector, hook.beforeSwap.selector);
+        assertEq(BeforeSwapDelta.unwrap(delta), 0);
+        assertEq(fee, 0);
+    }
+    
+    function testFuzz_SwapWithPriceDifference(uint256 oraclePrice, int256 amountSpecified) public {
+        vm.assume(oraclePrice > 0 && oraclePrice <= type(uint128).max);
+        vm.assume(amountSpecified != 0);
+        vm.assume(amountSpecified >= type(int64).min && amountSpecified <= type(int64).max);
+        
+        priceOracle.setPrice(token0, token1, oraclePrice);
+        
+        SwapParams memory params = SwapParams({
+            zeroForOne: true,
+            amountSpecified: amountSpecified,
+            sqrtPriceLimitX96: 0
+        });
+        
+        bool hasAuctionBefore = hook.activeAuctions(poolId) != bytes32(0);
+        
+        hook.beforeSwap(address(this), key, params, "");
+        
+        bool hasAuctionAfter = hook.activeAuctions(poolId) != bytes32(0);
+        
+        // If no auction before, there might be one after depending on conditions
+        // If auction before, should still have auction after
+        if (hasAuctionBefore) {
+            assertTrue(hasAuctionAfter);
+        }
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: PRICE CALCULATIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_PriceDeviation(uint256 poolPrice, uint256 oraclePrice) public {
+        vm.assume(poolPrice > 0 && poolPrice <= type(uint128).max);
+        vm.assume(oraclePrice > 0 && oraclePrice <= type(uint128).max);
+        
+        priceOracle.setPrice(token0, token1, poolPrice);
+        
+        // Test that extreme price differences don't cause overflow
+        SwapParams memory params = SwapParams({
+            zeroForOne: true,
+            amountSpecified: 5e18,
+            sqrtPriceLimitX96: 0
+        });
+        
+        // Should not revert regardless of price difference
+        hook.beforeSwap(address(this), key, params, "");
+    }
+    
+    function testFuzz_ThresholdTrigger(uint256 threshold, uint256 priceDiff) public {
+        vm.assume(threshold <= 1000); // Max 10%
+        vm.assume(priceDiff <= type(uint32).max);
+        
+        hook.setLVRThreshold(threshold);
+        
+        uint256 basePrice = 1e18;
+        uint256 newPrice = basePrice + (basePrice * priceDiff) / 10000;
+        
+        priceOracle.setPrice(token0, token1, newPrice);
+        
+        SwapParams memory params = SwapParams({
+            zeroForOne: true,
+            amountSpecified: 5e18, // Large enough to be significant
+            sqrtPriceLimitX96: 0
+        });
+        
+        hook.beforeSwap(address(this), key, params, "");
+        
+        bool shouldTrigger = priceDiff >= threshold;
+        bool hasAuction = hook.activeAuctions(poolId) != bytes32(0);
+        
+        if (shouldTrigger) {
+            // Should trigger auction if price difference exceeds threshold
+            assertTrue(hasAuction);
+        }
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: AUCTION OPERATIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_AuctionSubmission(uint256 winningBid, address winner) public {
+        vm.assume(winningBid <= type(uint128).max);
+        vm.assume(winner != address(0));
+        
+        // Create auction
+        priceOracle.setPrice(token0, token1, 1.2e18);
+        SwapParams memory params = SwapParams({
+            zeroForOne: true,
+            amountSpecified: 5e18,
+            sqrtPriceLimitX96: 0
+        });
+        hook.beforeSwap(address(this), key, params, "");
+        
+        bytes32 auctionId = hook.activeAuctions(poolId);
+        vm.assume(auctionId != bytes32(0));
+        
+        vm.warp(block.timestamp + 13); // Past auction duration
+        
+        vm.startPrank(operator);
+        hook.submitAuctionResult(auctionId, winner, winningBid);
+        vm.stopPrank();
+        
+        (, , , bool isActive, bool isComplete, address auctionWinner, uint256 auctionWinningBid,) = hook.auctions(auctionId);
+        
+        assertFalse(isActive);
+        assertTrue(isComplete);
+        assertEq(auctionWinner, winner);
+        assertEq(auctionWinningBid, winningBid);
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: ADMIN OPERATIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_SetLVRThreshold(uint256 threshold) public {
+        if (threshold <= 1000) {
+            hook.setLVRThreshold(threshold);
+            assertEq(hook.lvrThreshold(), threshold);
+        } else {
+            vm.expectRevert("LVR Auction Hook: threshold too high");
+            hook.setLVRThreshold(threshold);
+        }
+    }
+    
+    function testFuzz_OperatorAuthorization(address newOperator, bool authorized) public {
+        vm.assume(newOperator != address(0));
+        
+        hook.setOperatorAuthorization(newOperator, authorized);
+        assertEq(hook.authorizedOperators(newOperator), authorized);
+    }
+    
+    function testFuzz_FeeRecipient(address newRecipient) public {
+        if (newRecipient != address(0)) {
+            hook.setFeeRecipient(newRecipient);
+            assertEq(hook.feeRecipient(), newRecipient);
+        } else {
+            vm.expectRevert("LVR Auction Hook: invalid address");
+            hook.setFeeRecipient(newRecipient);
+        }
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: REWARD DISTRIBUTION
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_RewardDistribution(uint256 totalReward, uint256 lpLiquidity, uint256 totalLiquidity) public {
+        vm.assume(totalReward > 0 && totalReward <= type(uint128).max);
+        vm.assume(lpLiquidity > 0 && lpLiquidity <= totalLiquidity);
+        vm.assume(totalLiquidity > 0 && totalLiquidity <= type(uint128).max);
+        
+        address lp = makeAddr("lp");
+        
+        // Setup liquidity manually for testing
+        vm.store(
+            address(hook),
+            keccak256(abi.encode(poolId, uint256(1))), // poolRewards mapping slot
+            bytes32(totalReward)
+        );
+        
+        vm.store(
+            address(hook),
+            keccak256(abi.encode(lp, keccak256(abi.encode(poolId, uint256(2))))), // lpLiquidity mapping slot
+            bytes32(lpLiquidity)
+        );
+        
+        vm.store(
+            address(hook),
+            keccak256(abi.encode(poolId, uint256(3))), // totalLiquidity mapping slot
+            bytes32(totalLiquidity)
+        );
+        
+        uint256 expectedReward = (totalReward * lpLiquidity) / totalLiquidity;
+        uint256 initialBalance = lp.balance;
+        
+        vm.deal(address(hook), totalReward + 1e18);
+        
+        vm.startPrank(lp);
+        hook.claimRewards(poolId);
+        vm.stopPrank();
+        
+        uint256 actualReward = lp.balance - initialBalance;
+        assertEq(actualReward, expectedReward);
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: EDGE CASES
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_ExtremeLiquidityValues(uint256 liquidity1, uint256 liquidity2) public {
+        vm.assume(liquidity1 > 0 && liquidity1 <= type(uint64).max);
+        vm.assume(liquidity2 > 0 && liquidity2 <= type(uint64).max);
+        
+        address lp1 = makeAddr("lp1");
+        address lp2 = makeAddr("lp2");
+        
+        ModifyLiquidityParams memory params1 = ModifyLiquidityParams({
+            tickLower: -60,
+            tickUpper: 60,
+            liquidityDelta: int256(liquidity1),
+            salt: bytes32(0)
+        });
+        
+        ModifyLiquidityParams memory params2 = ModifyLiquidityParams({
+            tickLower: -60,
+            tickUpper: 60,
+            liquidityDelta: int256(liquidity2),
+            salt: bytes32(0)
+        });
+        
+        hook.beforeAddLiquidity(lp1, key, params1, "");
+        hook.beforeAddLiquidity(lp2, key, params2, "");
+        
+        assertEq(hook.lpLiquidity(poolId, lp1), liquidity1);
+        assertEq(hook.lpLiquidity(poolId, lp2), liquidity2);
+        assertEq(hook.totalLiquidity(poolId), liquidity1 + liquidity2);
+    }
+    
+    function testFuzz_RandomSwapSequences(uint8 numSwaps, uint256 seed) public {
+        vm.assume(numSwaps > 0 && numSwaps <= 50);
+        
+        for (uint8 i = 0; i < numSwaps; i++) {
+            uint256 random = uint256(keccak256(abi.encode(seed, i)));
+            
+            bool zeroForOne = random % 2 == 0;
+            int256 amount = int256((random % 1e20) + 1);
+            if (random % 4 == 0) amount = -amount; // 25% chance of negative
+            
+            SwapParams memory params = SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: amount,
+                sqrtPriceLimitX96: 0
+            });
+            
+            // Should not revert
+            hook.beforeSwap(address(this), key, params, "");
+            hook.afterSwap(
+                address(this),
+                key,
+                params,
+                BalanceDelta.wrap(int256(random % 1000)),
+                ""
+            );
+        }
+    }
+    
+    function testFuzz_PriceInversion(address tokenA, address tokenB) public {
+        vm.assume(tokenA != tokenB);
+        vm.assume(tokenA != address(0) && tokenB != address(0));
+        
+        Currency currencyA = Currency.wrap(tokenA);
+        Currency currencyB = Currency.wrap(tokenB);
+        
+        bool shouldInvert = hook.shouldInvertPrice(currencyA, currencyB);
+        
+        // Test consistency: if A->B inverts, then B->A should not invert
+        bool reverseInvert = hook.shouldInvertPrice(currencyB, currencyA);
+        
+        if (tokenA != 0xA0b86a33e6441C4c27D3F50c9d6D14bDf12F4e6e && 
+            tokenB != 0xA0b86a33e6441C4c27D3F50c9d6D14bDf12F4e6e &&
+            tokenA != 0xdAC17F958D2ee523a2206206994597C13D831ec7 &&
+            tokenB != 0xdAC17F958D2ee523a2206206994597C13D831ec7 &&
+            tokenA != 0x6B175474E89094C44Da98b954EedeAC495271d0F &&
+            tokenB != 0x6B175474E89094C44Da98b954EedeAC495271d0F) {
+            // For non-stablecoin pairs, should be consistent with address ordering
+            assertEq(shouldInvert, tokenA < tokenB);
+        }
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                        FUZZ: BOUNDARY CONDITIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    function testFuzz_LiquidityOverflowProtection(uint256 amount1, uint256 amount2) public {
+        vm.assume(amount1 > 0 && amount1 <= type(uint128).max);
+        vm.assume(amount2 > 0 && amount2 <= type(uint128).max);
+        vm.assume(amount1 + amount2 >= amount1); // No overflow
+        
+        address lp = makeAddr("lp");
+        
+        ModifyLiquidityParams memory params1 = ModifyLiquidityParams({
+            tickLower: -60,
+            tickUpper: 60,
+            liquidityDelta: int256(amount1),
+            salt: bytes32(0)
+        });
+        
+        ModifyLiquidityParams memory params2 = ModifyLiquidityParams({
+            tickLower: -60,
+            tickUpper: 60,
+            liquidityDelta: int256(amount2),
+            salt: bytes32(0)
+        });
+        
+        hook.beforeAddLiquidity(lp, key, params1, "");
+        hook.beforeAddLiquidity(lp, key, params2, "");
+        
+        assertEq(hook.lpLiquidity(poolId, lp), amount1 + amount2);
+        assertEq(hook.totalLiquidity(poolId), amount1 + amount2);
+    }
+    
+    function testFuzz_TimeWarp(uint256 timeOffset) public {
+        vm.assume(timeOffset <= 365 days);
+        
+        // Create auction
+        priceOracle.setPrice(token0, token1, 1.2e18);
+        SwapParams memory params = SwapParams({
+            zeroForOne: true,
+            amountSpecified: 5e18,
+            sqrtPriceLimitX96: 0
+        });
+        hook.beforeSwap(address(this), key, params, "");
+        
+        bytes32 auctionId = hook.activeAuctions(poolId);
+        
+        if (auctionId != bytes32(0)) {
+            uint256 startTime = block.timestamp;
+            vm.warp(startTime + timeOffset);
+            
+            (, uint256 auctionStart, uint256 duration, bool isActive, , , ,) = hook.auctions(auctionId);
+            
+            if (block.timestamp >= auctionStart + duration) {
+                // Should be able to submit result
+                vm.startPrank(operator);
+                hook.submitAuctionResult(auctionId, makeAddr("winner"), 1e18);
+                vm.stopPrank();
+            } else {
+                // Should not be able to submit result yet
+                vm.startPrank(operator);
+                vm.expectRevert("LVR Auction Hook: auction not ended");
+                hook.submitAuctionResult(auctionId, makeAddr("winner"), 1e18);
+                vm.stopPrank();
+            }
+        }
+    }
+    
+    receive() external payable {}
+}

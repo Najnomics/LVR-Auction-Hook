@@ -1,8 +1,28 @@
-# LVR Auction Hook [![Solidity](https://img.shields.io/badge/Solidity-0.8.26-blue.svg)](https://soliditylang.org/) [![EigenLayer](https://img.shields.io/badge/EigenLayer-AVS-purple.svg)](https://eigenlayer.xyz/) [![UniswapV4](https://img.shields.io/badge/UniswapV4-Hook-orange.svg)](https://uniswap.org/) [![MEV](https://img.shields.io/badge/MEV-Redistribution-red.svg)](https://ethereum.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+# LVR Auction Hook 🔐
 
-**Run an auction to reduce Loss Versus Rebalancing (LVR) by redistributing MEV profits to liquidity providers**
+> **Uniswap v4 Hookathon (UHI6) Submission - EigenLayer Benefactor Track**
 
-LVR Auction Hook is a Uniswap V4 hook that integrates with an EigenLayer AVS to auction the right to be first-in-block for trades, redistributing MEV extraction proceeds directly to liquidity providers instead of validators. This system compensates LPs for LVR losses by turning arbitrage opportunities into revenue streams.
+A MEV redistribution infrastructure that combines Uniswap v4 Hooks with EigenLayer's Actively Validated Services (AVS) to auction first-in-block trading rights and redistribute arbitrage profits directly to liquidity providers. LVR Auction Hook turns Loss Versus Rebalancing into LP revenue streams.
+
+## 🎯 Problem Statement
+
+Traditional AMMs suffer from severe value extraction that harms liquidity providers:
+
+- **LVR Exploitation**: Arbitrageurs extract $500M+ annually from stale AMM prices
+- **MEV Concentration**: Current PBS auctions benefit validators, not affected LPs
+- **Price Lag Vulnerability**: 13-second block times create profitable arbitrage windows
+- **LP Value Leakage**: LPs lose money to sophisticated traders while providing liquidity
+- **No Compensation**: LPs bear arbitrage costs but receive no auction proceeds
+
+## 💡 Solution: EigenLayer-Secured MEV Auctions
+
+Our solution redistributes MEV profits to liquidity providers through cryptoeconomically secured auctions. LVR Auction Hook captures arbitrage opportunities and auctions first-in-block trading rights, with proceeds flowing directly to LPs who suffered the price impact.
+
+### Key Innovation
+- **MEV Redistribution**: Auction proceeds compensate LPs for LVR losses
+- **Cryptoeconomic Security**: EigenLayer operators secure auction integrity through slashing
+- **First-in-Block Auctions**: Sealed-bid auctions for priority trading rights
+- **LP Compensation**: Direct distribution of auction proceeds proportional to liquidity provision
 
 ## 🚀 Quick Start
 
@@ -83,23 +103,138 @@ make deploy-contracts-mainnet
 
 ```
 lvr-auction-hook/
-├── contracts/              # Smart contracts (Solidity)
-│   ├── src/               # Source contracts
-│   ├── test/              # Contract tests
-│   ├── script/            # Deployment scripts
-│   └── foundry.toml       # Foundry configuration
-├── avs/                   # EigenLayer AVS (Go)
-│   ├── cmd/               # CLI commands
-│   ├── pkg/               # Go packages
-│   └── config/            # Configuration files
-├── frontend/              # React dashboard
-│   ├── src/               # React source
-│   ├── public/            # Static assets
-│   └── package.json       # Node dependencies
-├── backend/               # FastAPI backend (optional)
-├── Makefile              # Main build system
-└── README.md             # This file
+├── src/                          # 🎯 Core Hook Contracts
+│   ├── hooks/                    # Main hook implementations
+│   │   └── LVRAuctionHook.sol   # Primary LVR auction hook
+│   ├── oracles/                  # Price oracle integrations
+│   │   └── ChainlinkPriceOracle.sol
+│   ├── config/                   # Configuration contracts
+│   │   └── ProductionPriceFeedConfig.sol
+│   ├── interfaces/               # Contract interfaces
+│   │   ├── IAVSDirectory.sol
+│   │   └── IPriceOracle.sol
+│   ├── libraries/                # Auction utility libraries
+│   │   ├── AuctionLib.sol
+│   │   └── AuctionLibFixed.sol
+│   └── utils/                    # Helper utilities
+│       └── HookMiner.sol
+├── avs/                          # 🔗 Legacy EigenLayer AVS (Go Implementation)
+│   ├── cmd/                      # AVS binaries
+│   │   ├── aggregator/main.go    # BLS signature aggregator
+│   │   └── operator/main.go      # Price monitoring operator
+│   ├── aggregator/               # Aggregator implementation
+│   ├── operator/                 # Operator implementation
+│   ├── pkg/                      # Shared Go packages
+│   │   ├── types/                # Type definitions
+│   │   └── avsregistry/          # AVS registry integration
+│   └── config/                   # AVS configuration
+├── avs-new/                      # 🔗 Hourglass DevKit Implementation
+│   ├── cmd/                      # DevKit performers
+│   │   ├── main.go
+│   │   └── main_test.go
+│   ├── contracts/                # L1/L2 connector contracts
+│   │   ├── src/
+│   │   │   ├── l1-contracts/
+│   │   │   │   └── LVRAuctionServiceManager.sol
+│   │   │   ├── l2-contracts/
+│   │   │   │   └── LVRAuctionTaskHook.sol
+│   │   │   └── interfaces/
+│   │   │       └── IAVSDirectory.sol
+│   │   ├── script/
+│   │   │   ├── DeployLVRL1Contracts.s.sol
+│   │   │   └── DeployLVRL2Contracts.s.sol
+│   │   └── test/
+│   │       ├── LVRAuctionServiceManager.t.sol
+│   │       └── LVRAuctionTaskHook.t.sol
+│   ├── bin/                      # Compiled binaries
+│   ├── go.mod                    # Go dependencies
+│   ├── Makefile                  # DevKit build system
+│   └── README.md                 # DevKit documentation
+├── test/                         # 🧪 Comprehensive Test Suite
+│   ├── unit/                     # Unit tests
+│   │   ├── LVRAuctionHookBasic.t.sol
+│   │   ├── LVRAuctionHookComprehensive.t.sol.bak
+│   │   ├── LVRAuctionHookInternal.t.sol
+│   │   ├── LVRAuctionHookSimple.t.sol
+│   │   ├── LVRAuctionHookTest.t.sol
+│   │   ├── AuctionLib.t.sol
+│   │   ├── AuctionLibEnhanced.t.sol
+│   │   ├── ChainlinkPriceOracle.t.sol
+│   │   └── HookMiner.t.sol
+│   ├── fuzz/                     # Fuzz testing
+│   │   ├── AuctionFuzz.t.sol
+│   │   ├── LVRAuctionHookFuzz.t.sol
+│   │   ├── LVRAuctionHookFuzzComprehensive.t.sol.bak
+│   │   └── PriceOracleFuzz.t.sol
+│   ├── invariants/               # Invariant testing
+│   │   └── LVRAuctionInvariants.t.sol
+│   ├── mocks/                    # Mock contracts
+│   │   ├── MockContracts.sol
+│   │   ├── SimpleMocks.sol
+│   │   └── TestLVRAuctionHook.sol
+│   ├── utils/                    # Test utilities
+│   │   └── HookMinerComprehensive.t.sol
+│   └── integration/              # Integration tests
+├── script/                       # 📜 Deployment Scripts
+│   ├── DeployHookWithMining.s.sol
+│   └── DeployLVR.s.sol
+├── frontend/                     # 🖥️ React Dashboard
+├── backend/                      # 🔧 Backend Services
+├── lib/                          # 📚 Dependencies
+├── out/                          # 🏗️ Build Artifacts
+├── Makefile                      # 🔨 Build System
+└── README.md                     # 📖 This file
 ```
+
+## 🏗️ Hourglass DevKit Architecture
+
+This project implements the **official Hourglass DevKit template** for EigenLayer AVS development. Following DevKit best practices, the project is split into two components:
+
+### 🎯 **Main Project** (`/src/`, `/test/`, `/script/`)
+- **🏆 Core Component**: `src/hooks/LVRAuctionHook.sol` - **The main Uniswap V4 hook with complete LVR auction functionality**
+- **Purpose**: All auction business logic (price monitoring, bid processing, settlements)
+- **Contains**: Core hook, price oracles, auction libraries, utilities
+- **Deployment**: Deploy first, independently
+
+### 🔗 **AVS Component** (`/avs-new/`) - **Hourglass DevKit Template**
+- **Purpose**: Distributed compute coordination only
+- **Framework**: Built with official Hourglass DevKit template
+- **Contains**: 
+  - **L1 Connector**: `TaskAVSRegistrarBase` extension for EigenLayer integration
+  - **L2 Connector**: `IAVSTaskHook` implementation for task lifecycle management
+  - **Go Performer**: Hourglass/Ponos task orchestration
+- **Deployment**: Deploy after main project, references main contracts
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  EigenLayer     │───▶│  AVS L1/L2      │───▶│  Main Project   │
+│  (Operators)    │    │  (Connectors)   │    │  (Business)     │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+## 🏆 Core Component: LVR Auction Hook
+
+The heart of this project is **`src/hooks/LVRAuctionHook.sol`** - a comprehensive Uniswap V4 hook that implements the complete LVR auction system:
+
+### 🎯 **What it does:**
+- **🔍 Price Monitoring**: Continuously monitors price deviations using Chainlink oracles
+- **⚡ Auction Triggering**: Automatically triggers auctions when LVR thresholds are exceeded  
+- **💰 Bid Processing**: Validates and processes auction bids from MEV searchers
+- **🏅 Winner Selection**: Determines auction winners and grants execution rights
+- **💸 MEV Redistribution**: Redistributes captured MEV profits directly to liquidity providers
+- **📊 Settlement**: Handles auction settlements and reward distribution
+
+### 🛠️ **Technical Implementation:**
+- Implements Uniswap V4 hook interface (`beforeSwap`, `afterSwap`, etc.)
+- Integrates with EigenLayer AVS for distributed consensus
+- Uses Chainlink price feeds for accurate price monitoring
+- Employs auction libraries for bid validation and settlement logic
+
+### 🔗 **AVS Integration:**
+The hook interfaces with the **Hourglass DevKit AVS** (`/avs-new/`) which provides:
+- Distributed task coordination across multiple operators
+- Consensus mechanisms for auction results validation
+- EigenLayer integration for operator staking and slashing
 
 ## 🔧 Available Commands
 
@@ -118,39 +253,6 @@ make format               # Format all code
 ```
 
 ## 📊 Architecture Overview
-
----
-
-## 🎯 Problem Statement
-
-### The $500M+ LVR Crisis
-Loss Versus Rebalancing (LVR) represents one of DeFi's largest value extraction problems:
-
-- **Price Lag Exploitation**: 13-second Ethereum block times create price staleness vs continuous CEX trading
-- **Arbitrage Extraction**: Sophisticated traders extract $500M+ annually from AMM LPs through stale price arbitrage
-- **LP Value Leakage**: LPs lose money to arbitrageurs while providing essential market infrastructure
-- **MEV Concentration**: Current MEV auctions benefit validators and searchers, not the LPs being extracted from
-
-### Real-World LVR Impact
-```
-Example: ETH Price Movement (Binance → Uniswap)
-├── T=0: ETH trades at $2,000 on both Binance and Uniswap
-├── T+1s: News breaks, ETH jumps to $2,010 on Binance
-├── T+8s: Arbitrageur submits transaction to buy ETH on Uniswap at $2,000
-├── T+13s: Block mines, arbitrageur profits $10 per ETH at LP expense
-├── T+14s: Uniswap price updates to $2,010 (after LPs already lost value)
-└── Result: LPs subsidize arbitrageur profits with no compensation
-```
-
-### Current MEV Auction Limitations
-- **Validator Capture**: PBS auctions send MEV profits to validators, not affected LPs
-- **No LP Compensation**: LPs bear the cost of providing stale prices but receive no benefits
-- **Information Asymmetry**: Professional arbitrageurs have faster information than retail LPs
-- **Value Extraction**: Pure extraction from LPs with no value add to liquidity provision
-
----
-
-## 💡 Solution Architecture
 
 ### 🏗️ LVR Auction System Design
 
@@ -235,28 +337,28 @@ sequenceDiagram
 ## 🏛️ Core Components
 
 ### 1. LVRAuctionHook.sol (Primary Hook Contract)
-**Main Uniswap V4 Hook with MEV Redistribution**
+**Main Uniswap V4 Hook with MEV Redistribution** (`src/hooks/LVRAuctionHook.sol`)
 - Implements `beforeSwap()` to identify potential arbitrage opportunities
 - Receives auction proceeds from EigenLayer AVS and distributes to LPs
 - Tracks LP share percentages for fair distribution of auction revenue
 - Manages first-in-block priority rights for auction winners
 
-### 2. LVRAuctionAVS.sol (EigenLayer AVS Service Manager)
-**MEV Auction Coordination with Cryptoeconomic Security**
+### 2. LVRAuctionServiceManager.sol (EigenLayer AVS Service Manager)
+**MEV Auction Coordination with Cryptoeconomic Security** (`avs-new/contracts/src/l1-contracts/LVRAuctionServiceManager.sol`)
 - Coordinates sealed-bid auctions for first-in-block trading rights
 - Monitors price discrepancies between CEXs and on-chain pools
 - Validates auction integrity and prevents collusion through operator consensus
 - Distributes proceeds to Hook contracts for LP compensation
 
-### 3. PriceDiscrepancyMonitor.sol
-**Real-Time Price Differential Detection**
-- Monitors price feeds from Binance, Coinbase, Kraken vs on-chain pools
+### 3. ChainlinkPriceOracle.sol
+**Real-Time Price Differential Detection** (`src/oracles/ChainlinkPriceOracle.sol`)
+- Monitors price feeds from Chainlink oracles vs on-chain pools
 - Calculates potential arbitrage opportunities in real-time
 - Triggers auctions when price discrepancies exceed thresholds
 - Provides data for auction valuation and bidding strategies
 
-### 4. AuctionCoordinator.sol
-**Sealed-Bid Auction Management**
+### 4. AuctionLib.sol
+**Sealed-Bid Auction Management** (`src/libraries/AuctionLib.sol`)
 - Implements sealed-bid auction mechanism for MEV rights
 - Manages bidder registration and collateral requirements
 - Prevents auction manipulation through cryptoeconomic incentives
@@ -264,247 +366,25 @@ sequenceDiagram
 
 ---
 
-## 📁 Project Structure
+## 📊 Current Implementation Status
 
-```
-lvr-auction-hook/
-├── README.md
-├── Makefile                                 # Standard EigenLayer AVS commands
-├── docker-compose.yml                       # Local development stack
-├── foundry.toml
-├── .env.example
-├── .gitignore
-│
-├── contracts/
-│   ├── src/
-│   │   ├── LVRAuctionHook.sol              # Main Uniswap V4 hook contract
-│   │   ├── LVRAuctionServiceManager.sol    # EigenLayer AVS service manager
-│   │   ├── LVRAuctionTaskManager.sol       # AVS task coordination
-│   │   ├── hooks/
-│   │   │   ├── interfaces/
-│   │   │   │   ├── ILVRAuctionHook.sol
-│   │   │   │   └── IMEVDistributor.sol
-│   │   │   ├── libraries/
-│   │   │   │   ├── AuctionMath.sol         # Auction valuation calculations
-│   │   │   │   ├── MEVDistribution.sol     # LP proceeds distribution
-│   │   │   │   └── PriceDiscrepancy.sol    # Price differential calculations
-│   │   │   └── MEVDistributor.sol          # Auction proceeds distribution engine
-│   │   ├── avs/
-│   │   │   ├── interfaces/
-│   │   │   │   ├── ILVRAuctionAVS.sol
-│   │   │   │   └── IPriceOracle.sol
-│   │   │   ├── libraries/
-│   │   │   │   ├── SealedBidAuction.sol    # Sealed-bid auction implementation
-│   │   │   │   └── BLSAuctionVerification.sol # BLS signature verification
-│   │   │   ├── auction/
-│   │   │   │   ├── AuctionCoordinator.sol  # Auction management
-│   │   │   │   ├── BidValidator.sol        # Bid validation and collateral
-│   │   │   │   └── AuctionRegistry.sol     # Bidder registration
-│   │   │   └── monitoring/
-│   │   │       ├── PriceDiscrepancyMonitor.sol # CEX vs DEX price monitoring
-│   │   │       ├── BinanceOracle.sol       # Binance price integration
-│   │   │       ├── CoinbaseOracle.sol      # Coinbase price integration
-│   │   │       └── KrakenOracle.sol        # Kraken price integration
-│   │   └── interfaces/
-│   │       ├── ILVRAuctionHook.sol
-│   │       └── ILVRAuctionAVS.sol
-│   │
-│   ├── script/
-│   │   ├── Deploy.s.sol                    # Complete deployment script
-│   │   ├── DeployEigenLayerCore.s.sol      # EigenLayer core deployment
-│   │   ├── DeployLVRAuctionAVS.s.sol       # AVS contracts deployment
-│   │   ├── DeployLVRAuctionHook.s.sol      # Hook deployment
-│   │   ├── RegisterAuctionOperators.s.sol  # Operator registration
-│   │   └── SetupAuctionPools.s.sol         # Initialize auction-enabled pools
-│   │
-│   ├── test/
-│   │   ├── LVRAuctionHook.t.sol            # Hook unit tests
-│   │   ├── LVRAuctionAVS.t.sol             # AVS unit tests
-│   │   ├── integration/
-│   │   │   ├── AuctionFlow.t.sol           # End-to-end auction testing
-│   │   │   ├── MEVRedistribution.t.sol     # MEV distribution testing
-│   │   │   └── PriceDiscrepancy.t.sol      # Price monitoring testing
-│   │   ├── mocks/
-│   │   │   ├── MockCEXPriceFeeds.sol       # Mock CEX price data
-│   │   │   ├── MockArbitrageurs.sol        # Mock arbitrage bots
-│   │   │   └── MockAuctionBidders.sol      # Mock auction participants
-│   │   └── utils/
-│   │       ├── AuctionTestUtils.sol        # Auction testing utilities
-│   │       └── MEVCalculationUtils.sol     # MEV calculation testing
-│   │
-│   └── lib/                                # Foundry dependencies
-│       ├── forge-std/
-│       ├── openzeppelin-contracts/
-│       ├── eigenlayer-contracts/           # EigenLayer core contracts
-│       ├── eigenlayer-middleware/          # EigenLayer middleware
-│       ├── v4-core/                        # Uniswap V4 core
-│       └── v4-periphery/                   # Uniswap V4 periphery
-│
-├── operator/                               # Go-based AVS operator
-│   ├── cmd/
-│   │   └── main.go                         # Operator entry point
-│   ├── pkg/
-│   │   ├── config/
-│   │   │   └── config.go                   # Configuration management
-│   │   ├── operator/
-│   │   │   ├── operator.go                 # Main operator logic
-│   │   │   ├── price_monitor.go            # CEX price monitoring
-│   │   │   └── auction_coordinator.go      # Auction management
-│   │   ├── chainio/
-│   │   │   ├── avs_writer.go               # AVS contract interactions
-│   │   │   ├── avs_reader.go               # Contract state reading
-│   │   │   └── avs_subscriber.go           # Event subscription
-│   │   ├── pricing/
-│   │   │   ├── binance_client.go           # Binance API integration
-│   │   │   ├── coinbase_client.go          # Coinbase API integration
-│   │   │   ├── kraken_client.go            # Kraken API integration
-│   │   │   └── discrepancy_detector.go     # Price discrepancy detection
-│   │   ├── auction/
-│   │   │   ├── auction_manager.go          # Auction lifecycle management
-│   │   │   ├── bid_collector.go            # Sealed bid collection
-│   │   │   ├── winner_selector.go          # Auction winner determination
-│   │   │   └── proceeds_distributor.go     # Proceeds distribution
-│   │   └── types/
-│   │       ├── auction.go                  # Auction-related types
-│   │       ├── pricing.go                  # Price data types
-│   │       └── mev.go                      # MEV calculation types
-│   ├── config-files/
-│   │   ├── operator.mainnet.yaml           # Mainnet configuration
-│   │   ├── operator.holesky.yaml           # Holesky testnet configuration
-│   │   └── operator.anvil.yaml             # Local development configuration
-│   ├── go.mod
-│   └── go.sum
-│
-├── aggregator/                             # BLS signature aggregator
-│   ├── cmd/
-│   │   └── main.go
-│   ├── pkg/
-│   │   ├── aggregator/
-│   │   │   ├── aggregator.go               # BLS signature aggregation
-│   │   │   └── auction_aggregator.go       # Auction result aggregation
-│   │   ├── chainio/
-│   │   │   ├── avs_writer.go
-│   │   │   └── avs_reader.go
-│   │   └── types/
-│   │       └── aggregator.go
-│   ├── config-files/
-│   │   ├── aggregator.mainnet.yaml
-│   │   ├── aggregator.holesky.yaml
-│   │   └── aggregator.anvil.yaml
-│   ├── go.mod
-│   └── go.sum
-│
-├── challenger/                             # Fraud proof challenger
-│   ├── cmd/
-│   │   └── main.go
-│   ├── pkg/
-│   │   ├── challenger/
-│   │   │   ├── challenger.go
-│   │   │   ├── auction_validator.go        # Validate auction integrity
-│   │   │   └── price_validator.go          # Validate price data accuracy
-│   │   ├── chainio/
-│   │   │   ├── avs_writer.go
-│   │   │   └── avs_reader.go
-│   │   └── types/
-│   │       └── challenger.go
-│   ├── config-files/
-│   │   ├── challenger.mainnet.yaml
-│   │   ├── challenger.holesky.yaml
-│   │   └── challenger.anvil.yaml
-│   ├── go.mod
-│   └── go.sum
-│
-├── config-files/                           # Root-level EigenLayer configs
-│   ├── operator.mainnet.yaml
-│   ├── operator.holesky.yaml
-│   ├── operator.anvil.yaml
-│   ├── aggregator.mainnet.yaml
-│   ├── aggregator.holesky.yaml
-│   ├── aggregator.anvil.yaml
-│   ├── challenger.mainnet.yaml
-│   ├── challenger.holesky.yaml
-│   └── challenger.anvil.yaml
-│
-├── tests/                                  # EigenLayer-style testing
-│   ├── anvil/
-│   │   ├── README.md
-│   │   ├── state/
-│   │   │   ├── eigenlayer-deployed-anvil-state.json
-│   │   │   ├── avs-deployed-anvil-state.json
-│   │   │   └── auction-deployed-anvil-state.json
-│   │   └── deploy_and_save_anvil_state.sh
-│   ├── integration/
-│   │   ├── operator_test.go
-│   │   ├── auction_flow_test.go            # Full auction flow testing
-│   │   └── mev_redistribution_test.go      # MEV redistribution testing
-│   └── utils/
-│       ├── mock_contracts.go
-│       └── auction_test_utils.go
-│
-├── frontend/                               # React dashboard
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── AuctionMonitor.tsx          # Real-time auction monitoring
-│   │   │   ├── LVRTracker.tsx              # LVR loss tracking
-│   │   │   ├── MEVDistribution.tsx         # MEV distribution visualization
-│   │   │   └── PriceDiscrepancy.tsx        # Price discrepancy monitoring
-│   │   ├── hooks/
-│   │   │   ├── useAuctionData.ts           # Auction data from AVS
-│   │   │   ├── useLVRMetrics.ts            # LVR calculation hooks
-│   │   │   └── useMEVDistribution.ts       # MEV distribution tracking
-│   │   ├── pages/
-│   │   │   ├── AuctionDashboard.tsx        # Main auction dashboard
-│   │   │   ├── LPRewards.tsx               # LP compensation tracking
-│   │   │   └── AuctionHistory.tsx          # Historical auction data
-│   │   └── utils/
-│   │       ├── auctionCalculations.ts
-│   │       └── lvrMath.ts
-│   ├── package.json
-│   └── vite.config.ts
-│
-├── bidder-interface/                       # Arbitrageur bidding interface
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── BidSubmission.tsx           # Sealed bid submission
-│   │   │   ├── AuctionStatus.tsx           # Live auction status
-│   │   │   └── ProfitCalculator.tsx        # Arbitrage profit estimation
-│   │   ├── hooks/
-│   │   │   ├── useAuctionBidding.ts        # Bidding interface
-│   │   │   └── usePriceFeeds.ts            # Price feed integration
-│   │   └── utils/
-│   │       ├── bidding.ts
-│   │       └── arbitrageCalculations.ts
-│   ├── package.json
-│   └── tsconfig.json
-│
-├── subgraph/                               # The Graph indexing
-│   ├── schema.graphql
-│   ├── subgraph.yaml
-│   └── src/
-│       ├── auction-mapping.ts              # Auction event mapping
-│       ├── hook-mapping.ts                 # Hook event mapping
-│       └── entities/
-│           ├── auctions.ts                 # Auction data tracking
-│           ├── bids.ts                     # Bid history tracking
-│           ├── distributions.ts            # MEV distribution tracking
-│           └── lvrMetrics.ts               # LVR calculation tracking
-│
-├── docs/
-│   ├── AUCTION_MECHANISM.md               # Detailed auction mechanism
-│   ├── LVR_ANALYSIS.md                    # LVR calculation methodology
-│   ├── MEV_REDISTRIBUTION.md              # MEV redistribution details
-│   └── BIDDER_GUIDE.md                    # Guide for auction participants
-│
-└── infra/
-    ├── docker-compose.yml
-    ├── kubernetes/
-    │   ├── auction-deployment.yaml
-    │   ├── price-monitor-deployment.yaml
-    │   └── operator-deployment.yaml
-    └── terraform/
-        ├── aws/
-        └── gcp/
-```
+### ✅ Completed Components
+- **Core Hook Contracts**: Uniswap v4 hook implementation with auction logic (`src/hooks/LVRAuctionHook.sol`)
+- **Price Oracle Integration**: Chainlink price feed integration (`src/oracles/ChainlinkPriceOracle.sol`)
+- **Auction Libraries**: Sealed-bid auction mechanisms (`src/libraries/AuctionLib.sol`, `AuctionLibFixed.sol`)
+- **Comprehensive Testing**: Extensive test suite with unit, fuzz, and invariant tests
+- **Hourglass DevKit AVS**: L1/L2 connector implementations (`avs-new/contracts/`)
+- **Legacy AVS**: Go-based operator and aggregator services (`avs/`)
+
+### 🔄 In Development  
+- **Advanced Auction Features**: Multi-block auction strategies
+- **Cross-DEX Arbitrage**: Extended arbitrage opportunity detection
+- **Frontend Dashboard**: React-based monitoring interface
+
+### 📋 Planned Features
+- **Multi-chain Deployment**: Arbitrum, Polygon, Base support
+- **Institutional Tools**: Advanced bidder interfaces and compliance
+- **Performance Optimization**: Gas efficiency improvements
 
 ---
 
@@ -1242,37 +1122,47 @@ make operator-performance             # Check operator performance metrics
 ```bash
 # Foundry contract tests
 forge test --match-contract LVRAuctionHookTest     # Hook unit tests
-forge test --match-contract LVRAuctionAVSTest      # AVS unit tests
-forge test --match-contract AuctionFlowTest        # Auction mechanism tests
+forge test --match-contract LVRAuctionHookBasic    # Basic hook functionality
+forge test --match-contract LVRAuctionHookInternal # Internal hook logic
+forge test --match-contract LVRAuctionHookSimple   # Simplified hook tests
 
-# Price discrepancy tests
-forge test --match-contract PriceDiscrepancyTest   # Price monitoring tests
-forge test --match-contract CEXIntegrationTest     # CEX API integration tests
+# Auction library tests
+forge test --match-contract AuctionLibTest         # Auction mechanism tests
+forge test --match-contract AuctionLibEnhanced     # Enhanced auction features
 
-# MEV redistribution tests
-forge test --match-contract MEVDistributionTest    # MEV distribution mechanism
-forge test --match-contract LPRewardTest           # LP reward calculation tests
+# Price oracle tests
+forge test --match-contract ChainlinkPriceOracleTest # Price monitoring tests
 
-# Auction mechanism tests
-forge test --match-contract SealedBidAuctionTest   # Sealed bid auction logic
-forge test --match-contract AuctionIntegrityTest   # Auction manipulation prevention
-forge test --match-contract CollateralTest         # Bidder collateral management
+# Fuzz testing
+forge test --match-path "test/fuzz/*"              # Property-based testing
+forge test --match-contract AuctionFuzz            # Auction fuzz tests
+forge test --match-contract LVRAuctionHookFuzz     # Hook fuzz tests
+forge test --match-contract PriceOracleFuzz        # Price oracle fuzz tests
+
+# Invariant testing
+forge test --match-path "test/invariants/*"        # System-wide property testing
+forge test --match-contract LVRAuctionInvariants   # Auction system invariants
 
 # Gas optimization tests
 forge test --gas-report                            # Gas usage analysis
-forge test --match-contract GasOptimization        # Gas optimization verification
 ```
 
-### AVS Component Tests (Go)
+### AVS Component Tests
+
+#### Hourglass DevKit Tests
 ```bash
-cd operator && go test ./...                       # Price monitoring operator tests
-cd aggregator && go test ./...                     # Auction result aggregation tests
-cd challenger && go test ./...                     # Auction integrity challenger tests
+cd avs-new && go test ./...                        # DevKit performer tests
+cd avs-new/contracts && forge test                 # L1/L2 connector tests
+forge test --match-contract LVRAuctionServiceManagerTest # Service manager tests
+forge test --match-contract LVRAuctionTaskHookTest       # Task hook tests
+```
+
+#### Legacy AVS Tests (Go)
+```bash
+cd avs/operator && go test ./...                   # Price monitoring operator tests
+cd avs/aggregator && go test ./...                 # Auction result aggregation tests
 
 # Price monitoring tests
-make test-binance-integration                      # Test Binance API integration
-make test-coinbase-integration                     # Test Coinbase API integration
-make test-kraken-integration                       # Test Kraken API integration
 make test-price-discrepancy-detection              # Test discrepancy detection logic
 
 # Auction coordination tests
@@ -1394,35 +1284,38 @@ git push origin feature/improved-auction-algorithm
 This project builds upon cutting-edge research in MEV redistribution and auction mechanism design:
 
 ### **Primary EigenLayer Templates Used**
+
 - **[Hello World AVS](https://github.com/Layr-Labs/hello-world-avs)**: Core project structure, ServiceManager patterns, deployment scripts
 - **[Incredible Squaring AVS](https://github.com/Layr-Labs/incredible-squaring-avs)**: Advanced operator architecture, BLS aggregation, multi-component systems
 - **[EigenLayer Middleware](https://github.com/Layr-Labs/eigenlayer-middleware)**: ServiceManagerBase, task management, economic security mechanisms
 - **[EigenLayer Contracts](https://github.com/Layr-Labs/eigenlayer-contracts)**: Core protocol contracts and restaking infrastructure
 
 ### **Research and Academic Foundations**
+
 - **[LVR Research](https://arxiv.org/abs/2208.06046)**: Loss Versus Rebalancing foundational research by Austin Adams, Ciamac Moallemi, Sara Reynolds, Dan Robinson
 - **[MEV-Boost](https://github.com/flashbots/mev-boost)**: PBS auction mechanism patterns adapted for LP benefit
 - **[Flashbots Research](https://github.com/flashbots/flashbots-research)**: MEV extraction and redistribution research
 - **[Uniswap V4 Hooks](https://github.com/Uniswap/v4-core)**: Programmable AMM infrastructure
 
 ### **Auction Mechanism Design**
+
 - **[Sealed-Bid Auctions](https://en.wikipedia.org/wiki/Sealed-bid_auction)**: Classical auction theory applied to MEV redistribution
 - **[VCG Mechanisms](https://en.wikipedia.org/wiki/Vickrey%E2%80%93Clarke%E2%80%93Groves_auction)**: Truthful auction mechanisms for optimal bidder behavior
 - **[Commit-Reveal Schemes](https://en.wikipedia.org/wiki/Commitment_scheme)**: Cryptographic primitives for sealed bid privacy
 
 ### **Template-Specific Attribution**
 
-#### **From [Hello World AVS](https://github.com/Layr-Labs/hello-world-avs)**:
+#### **From [Hello World AVS](https://github.com/Layr-Labs/hello-world-avs)**
 - **ServiceManager Pattern**: `HelloWorldServiceManager.sol` → `LVRAuctionServiceManager.sol`
 - **Project Structure**: Root-level configuration and deployment organization
 - **Testing Framework**: Anvil-based local testing adapted for auction simulation
 
-#### **From [Incredible Squaring AVS](https://github.com/Layr-Labs/incredible-squaring-avs)**:
+#### **From [Incredible Squaring AVS](https://github.com/Layr-Labs/incredible-squaring-avs)**
 - **Go Operator Architecture**: Multi-component operator system for price monitoring and auction coordination
 - **BLS Aggregation**: Signature aggregation for auction result consensus
 - **Task Management**: Operator task coordination for real-time auction execution
 
-#### **From [EigenLayer Middleware](https://github.com/Layr-Labs/eigenlayer-middleware)**:
+#### **From [EigenLayer Middleware](https://github.com/Layr-Labs/eigenlayer-middleware)**
 - **Economic Security**: Slashing and reward mechanisms for auction integrity
 - **Operator Registry**: Registration and management of price monitoring operators
 - **Task Coordination**: Distributed task execution for auction management
@@ -1432,21 +1325,29 @@ This project builds upon cutting-edge research in MEV redistribution and auction
 ## 📚 Additional Resources
 
 ### Technical Documentation
-- **[Auction Mechanism Design](docs/AUCTION_MECHANISM.md)**: Detailed sealed-bid auction implementation
-- **[LVR Analysis](docs/LVR_ANALYSIS.md)**: Mathematical models for LVR calculation and prediction
-- **[MEV Redistribution](docs/MEV_REDISTRIBUTION.md)**: LP reward distribution mechanisms
-- **[Bidder Guide](docs/BIDDER_GUIDE.md)**: Complete guide for auction participants
+
+- **Test Results**: Run `forge test` to see comprehensive test suite with unit, fuzz, and invariant tests
+- **AVS Implementation**: Check `avs-new/` directory for Hourglass DevKit implementation and `avs/` for legacy Go-based code
+- **Hook Contracts**: Review `src/hooks/LVRAuctionHook.sol` for core Uniswap v4 hook implementation
+- **Auction Libraries**: See `src/libraries/` for auction mechanism implementations
+- **Configuration**: See `src/config/` for deployment and auction parameters
+- **Test Structure**: 
+  - Unit tests: `test/unit/` - Individual component testing
+  - Fuzz tests: `test/fuzz/` - Property-based testing
+  - Invariant tests: `test/invariants/` - System-wide property testing
+  - Mock contracts: `test/mocks/` - Testing utilities
 
 ### Research and Academic Papers
+
 - **[LVR: A New Paradigm for AMM Design](https://arxiv.org/abs/2208.06046)**: Foundational LVR research
 - **[MEV and Proof-of-Stake](https://arxiv.org/abs/2107.03466)**: MEV implications for PoS systems
 - **[Auction Theory in Blockchain](https://arxiv.org/abs/2009.07086)**: Blockchain auction mechanism design
 
 ### Community and Support
-- **Discord**: [discord.gg/lvr-auction](https://discord.gg/lvr-auction) - Auction mechanism discussions
-- **Twitter**: [@LVRAuctionHook](https://twitter.com/LVRAuctionHook) - Updates and research
-- **Documentation**: [docs.lvr-auction.xyz](https://docs.lvr-auction.xyz) - Complete technical documentation
-- **Research Forum**: [research.lvr-auction.xyz](https://research.lvr-auction.xyz) - Academic discussions
+
+- **GitHub Issues**: Report bugs and request features
+- **EigenLayer Discord**: Join the EigenLayer community for AVS development discussions
+- **Uniswap v4 Discord**: Participate in hook development discussions
 
 ---
 
@@ -1458,11 +1359,12 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 
 ## 📞 Contact
 
-- **Email**: team@lvr-auction.xyz
-- **Documentation**: [docs.lvr-auction.xyz](https://docs.lvr-auction.xyz)
-- **Discord**: [discord.gg/lvr-auction](https://discord.gg/lvr-auction)
-- **Twitter**: [@LVRAuctionHook](https://twitter.com/LVRAuctionHook)
+- **Project**: LVR Auction Hook - MEV Redistribution for Liquidity Providers
+- **Built For**: Uniswap v4 Hookathon (UHI6) - EigenLayer Benefactor Track
+- **Repository**: Check the repository issues and discussions for updates
 
 ---
 
-*Redistributing MEV profits to liquidity providers through intelligent auction mechanisms. Built with ❤️ for a fairer DeFi ecosystem.*
+**Built with ❤️ for the Uniswap v4 Hookathon (UHI6) - EigenLayer Benefactor Track**
+
+*"Redistributing MEV profits to liquidity providers through intelligent auction mechanisms"*
