@@ -24,6 +24,7 @@ Thumbs.db
 # Claude and context directories
 .claude/
 context/
+context*/
 
 # Logs
 *.log
