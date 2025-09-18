@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-contracts:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
+    
+    - name: Install dependencies
+      run: |
+        forge install
+        forge build
+    
+    - name: Verify contracts compile
+      run: forge build --sizes
+    
+    - name: Run gas optimization check
+      run: forge test --gas-report
+
+  build-avs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Install Go dependencies
+      run: |
+        cd avs-new
+        go mod download
+    
+    - name: Build AVS performer
+      run: |
+        cd avs-new
+        go build -o bin/performer ./cmd
+    
+    - name: Build AVS contracts
+      run: |
+        cd avs-new/contracts
+        forge build
+
+  build-docker:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        cd avs-new
+        docker build -t lvr-auction-avs:latest .
+    
+    - name: Test Docker image
+      run: |
+        cd avs-new
+        docker run --rm lvr-auction-avs:latest --help

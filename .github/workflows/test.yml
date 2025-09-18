@@ -1,0 +1,100 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test-contracts:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
+    
+    - name: Install dependencies
+      run: |
+        forge install
+        forge build
+    
+    - name: Run unit tests
+      run: forge test --match-path "test/unit/*"
+    
+    - name: Run fuzz tests
+      run: forge test --match-path "test/fuzz/*"
+    
+    - name: Run invariant tests
+      run: forge test --match-path "test/invariants/*"
+    
+    - name: Run integration tests
+      run: forge test --match-path "test/integration/*"
+    
+    - name: Generate coverage report
+      run: forge coverage --ir-minimum --report
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage/lcov.info
+        flags: contracts
+        name: contracts-coverage
+
+  test-avs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+    
+    - name: Install Go dependencies
+      run: |
+        cd avs-new
+        go mod download
+    
+    - name: Run Go tests
+      run: |
+        cd avs-new
+        go test ./...
+    
+    - name: Run AVS contract tests
+      run: |
+        cd avs-new/contracts
+        forge test
+
+  test-coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: nightly
+    
+    - name: Install dependencies
+      run: |
+        forge install
+        forge build
+    
+    - name: Run coverage analysis
+      run: |
+        forge coverage --ir-minimum --report
+        echo "Coverage threshold: 90%"
+    
+    - name: Check coverage threshold
+      run: |
+        COVERAGE=$(forge coverage --ir-minimum | grep "Total" | awk '{print $2}' | sed 's/%//')
+        if (( $(echo "$COVERAGE < 90" | bc -l) )); then
+          echo "Coverage $COVERAGE% is below threshold of 90%"
+          exit 1
+        else
+          echo "Coverage $COVERAGE% meets threshold of 90%"
+        fi
