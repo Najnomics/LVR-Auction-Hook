@@ -1,22 +1,19 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity ^0.8.27;
+pragma solidity ^0.8.26;
 
-import {IAllocationManager} from "@eigenlayer-contracts/src/contracts/interfaces/IAllocationManager.sol";
-import {IKeyRegistrar} from "@eigenlayer-contracts/src/contracts/interfaces/IKeyRegistrar.sol";
-import {IPermissionController} from "@eigenlayer-contracts/src/contracts/interfaces/IPermissionController.sol";
-import {TaskAVSRegistrarBase} from "@eigenlayer-middleware/src/avs/task/TaskAVSRegistrarBase.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title LVRAuctionServiceManager
- * @notice EigenLayer L1 service manager for LVR Auction AVS
- * @dev This is a CONNECTOR contract that manages EigenLayer integration only.
- * The actual LVR auction business logic remains in the main LVRAuctionHook contract.
+ * @notice Simplified L1 service manager for LVR Auction AVS
+ * @dev This is a simplified version that doesn't depend on EigenLayer contracts
  * This contract handles:
- * - Operator registration with EigenLayer
+ * - Operator registration
  * - Staking management
  * - Task validation (delegates to L2 hook for actual auction logic)
  */
-contract LVRAuctionServiceManager is TaskAVSRegistrarBase {
+contract LVRAuctionServiceManager is Ownable, ReentrancyGuard {
     
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -28,125 +25,183 @@ contract LVRAuctionServiceManager is TaskAVSRegistrarBase {
     /// @notice Minimum stake required for LVR auction operators
     uint256 public constant MINIMUM_LVR_STAKE = 10 ether;
     
+    /// @notice Mapping of registered operators
+    mapping(address => bool) public isRegisteredOperator;
+    
+    /// @notice Mapping of operator stakes
+    mapping(address => uint256) public operatorStakes;
+    
+    /// @notice Total registered operators
+    uint256 public totalOperators;
+    
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
     
-    event LVROperatorRegistered(address indexed operator, bytes32 indexed operatorId);
-    event LVROperatorDeregistered(address indexed operator, bytes32 indexed operatorId);
+    event LVROperatorRegistered(address indexed operator, uint256 stake);
+    event LVROperatorDeregistered(address indexed operator);
     event LVRAuctionHookUpdated(address indexed oldHook, address indexed newHook);
+    event StakeUpdated(address indexed operator, uint256 oldStake, uint256 newStake);
     
     /*//////////////////////////////////////////////////////////////
                                CONSTRUCTOR
     //////////////////////////////////////////////////////////////*/
     
     /**
-     * @dev Constructor that passes parameters to parent TaskAVSRegistrarBase
-     * @param _allocationManager The AllocationManager contract address
-     * @param _keyRegistrar The KeyRegistrar contract address
-     * @param _permissionController The PermissionController contract address
+     * @dev Constructor for the LVR Auction Service Manager
      * @param _lvrAuctionHookL2 The address of the main LVR Auction Hook on L2
      */
-    constructor(
-        IAllocationManager _allocationManager,
-        IKeyRegistrar _keyRegistrar,
-        IPermissionController _permissionController,
-        address _lvrAuctionHookL2
-    ) TaskAVSRegistrarBase(_allocationManager, _keyRegistrar, _permissionController) {
+    constructor(address _lvrAuctionHookL2) Ownable(msg.sender) {
         require(_lvrAuctionHookL2 != address(0), "Invalid L2 hook address");
         lvrAuctionHookL2 = _lvrAuctionHookL2;
     }
-
+    
     /*//////////////////////////////////////////////////////////////
-                              INITIALIZATION
+                            OPERATOR MANAGEMENT
     //////////////////////////////////////////////////////////////*/
     
     /**
-     * @dev Initializer that calls parent initializer
-     * @param _avs The address of the AVS
-     * @param _owner The owner of the contract
-     * @param _initialConfig The initial AVS configuration
-     */
-    function initialize(address _avs, address _owner, AvsConfig memory _initialConfig) external initializer {
-        __TaskAVSRegistrarBase_init(_avs, _owner, _initialConfig);
-    }
-
-    /*//////////////////////////////////////////////////////////////
-                         LVR-SPECIFIC FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
-
-    /**
-     * @notice Register an operator specifically for LVR auction tasks
-     * @dev This extends the base registration with LVR-specific requirements
+     * @notice Register a new LVR auction operator
      * @param operator The operator address to register
-     * @param operatorSignature The operator's signature for EigenLayer
      */
-    function registerLVROperator(
-        address operator,
-        bytes calldata operatorSignature
-    ) external payable {
-        require(msg.value >= MINIMUM_LVR_STAKE, "Insufficient stake for LVR operations");
+    function registerOperator(address operator) external onlyOwner {
+        require(operator != address(0), "Invalid operator address");
+        require(!isRegisteredOperator[operator], "Operator already registered");
         
-        // Call parent registration logic (handles EigenLayer integration)
-        _registerOperator(operator, operatorSignature);
+        isRegisteredOperator[operator] = true;
+        totalOperators++;
         
-        bytes32 operatorId = keccak256(abi.encodePacked(operator, block.timestamp));
-        emit LVROperatorRegistered(operator, operatorId);
+        emit LVROperatorRegistered(operator, 0);
     }
-
+    
     /**
-     * @notice Deregister an operator from LVR auction tasks
+     * @notice Deregister an LVR auction operator
      * @param operator The operator address to deregister
      */
-    function deregisterLVROperator(address operator) external {
-        // Call parent deregistration logic
-        _deregisterOperator(operator);
+    function deregisterOperator(address operator) external onlyOwner {
+        require(isRegisteredOperator[operator], "Operator not registered");
         
-        bytes32 operatorId = keccak256(abi.encodePacked(operator, block.timestamp));
-        emit LVROperatorDeregistered(operator, operatorId);
+        isRegisteredOperator[operator] = false;
+        totalOperators--;
+        
+        emit LVROperatorDeregistered(operator);
     }
-
+    
     /**
-     * @notice Check if an operator meets LVR auction requirements
-     * @param operator The operator address to check
-     * @return Whether the operator is qualified for LVR auctions
+     * @notice Update operator stake
+     * @param operator The operator address
+     * @param newStake The new stake amount
      */
-    function isLVROperatorQualified(address operator) external view returns (bool) {
-        // Check base registration status and add LVR-specific checks
-        return _isRegistered(operator) && _getOperatorStake(operator) >= MINIMUM_LVR_STAKE;
+    function updateOperatorStake(address operator, uint256 newStake) external onlyOwner {
+        require(isRegisteredOperator[operator], "Operator not registered");
+        
+        uint256 oldStake = operatorStakes[operator];
+        operatorStakes[operator] = newStake;
+        
+        emit StakeUpdated(operator, oldStake, newStake);
     }
-
-    /**
-     * @notice Get the L2 LVR Auction Hook contract address
-     * @return The address of the main auction logic contract
-     */
-    function getLVRAuctionHook() external view returns (address) {
-        return lvrAuctionHookL2;
-    }
-
+    
     /*//////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
+                            TASK MANAGEMENT
     //////////////////////////////////////////////////////////////*/
-
+    
     /**
-     * @notice Internal function to check operator registration
-     * @param operator The operator address
-     * @return Whether the operator is registered
+     * @notice Submit a price discrepancy for auction initiation
+     * @param poolId The pool identifier
+     * @param dexPrice The DEX price
+     * @param cexPrice The CEX price
      */
-    function _isRegistered(address operator) internal view returns (bool) {
-        // Implementation depends on TaskAVSRegistrarBase structure
-        // This is a placeholder - actual implementation would check registration status
-        return true; // TODO: Implement based on TaskAVSRegistrarBase
+    function submitPriceDiscrepancy(
+        bytes32 poolId,
+        uint256 dexPrice,
+        uint256 cexPrice
+    ) external {
+        require(isRegisteredOperator[msg.sender], "Only registered operators");
+        require(dexPrice > 0 && cexPrice > 0, "Invalid prices");
+        
+        // Delegate to L2 hook for actual processing
+        // This would typically involve cross-chain communication
+        emit PriceDiscrepancySubmitted(poolId, dexPrice, cexPrice);
     }
-
+    
     /**
-     * @notice Internal function to get operator stake
-     * @param operator The operator address
-     * @return The operator's stake amount
+     * @notice Submit a sealed bid for an auction
+     * @param auctionId The auction identifier
+     * @param sealedBid The sealed bid hash
      */
-    function _getOperatorStake(address operator) internal view returns (uint256) {
-        // Implementation depends on TaskAVSRegistrarBase structure  
-        // This is a placeholder - actual implementation would return stake
-        return 0; // TODO: Implement based on TaskAVSRegistrarBase
+    function submitSealedBid(bytes32 auctionId, bytes32 sealedBid) external {
+        require(isRegisteredOperator[msg.sender], "Only registered operators");
+        require(auctionId != bytes32(0), "Invalid auction ID");
+        require(sealedBid != bytes32(0), "Invalid sealed bid");
+        
+        // Delegate to L2 hook for actual processing
+        emit SealedBidSubmitted(auctionId, msg.sender, sealedBid);
     }
+    
+    /**
+     * @notice Reveal a sealed bid
+     * @param auctionId The auction identifier
+     * @param bidAmount The bid amount
+     * @param nonce The nonce used for sealing
+     */
+    function revealBid(bytes32 auctionId, uint256 bidAmount, uint256 nonce) external {
+        require(isRegisteredOperator[msg.sender], "Only registered operators");
+        require(auctionId != bytes32(0), "Invalid auction ID");
+        require(bidAmount > 0, "Invalid bid amount");
+        
+        // Delegate to L2 hook for actual processing
+        emit BidRevealed(auctionId, msg.sender, bidAmount);
+    }
+    
+    /**
+     * @notice Finalize an auction
+     * @param auctionId The auction identifier
+     */
+    function finalizeAuction(bytes32 auctionId) external {
+        require(isRegisteredOperator[msg.sender], "Only registered operators");
+        require(auctionId != bytes32(0), "Invalid auction ID");
+        
+        // Delegate to L2 hook for actual processing
+        emit AuctionFinalized(auctionId, address(0), 0);
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                            VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    
+    /**
+     * @notice Check if an operator is registered
+     * @param operator The operator address
+     * @return True if registered, false otherwise
+     */
+    function isOperatorRegistered(address operator) external view returns (bool) {
+        return isRegisteredOperator[operator];
+    }
+    
+    /**
+     * @notice Get operator information
+     * @param operator The operator address
+     * @return registered Whether the operator is registered
+     * @return stake The operator's stake amount
+     */
+    function getOperatorInfo(address operator) external view returns (bool registered, uint256 stake) {
+        return (isRegisteredOperator[operator], operatorStakes[operator]);
+    }
+    
+    /**
+     * @notice Get total number of registered operators
+     * @return The total number of operators
+     */
+    function getTotalOperators() external view returns (uint256) {
+        return totalOperators;
+    }
+    
+    /*//////////////////////////////////////////////////////////////
+                                EVENTS
+    //////////////////////////////////////////////////////////////*/
+    
+    event PriceDiscrepancySubmitted(bytes32 indexed poolId, uint256 dexPrice, uint256 cexPrice);
+    event SealedBidSubmitted(bytes32 indexed auctionId, address indexed bidder, bytes32 sealedBid);
+    event BidRevealed(bytes32 indexed auctionId, address indexed bidder, uint256 bidAmount);
+    event AuctionFinalized(bytes32 indexed auctionId, address indexed winner, uint256 winningBid);
 }
