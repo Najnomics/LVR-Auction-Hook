@@ -66,7 +66,16 @@ contract MockPriceOracle is IPriceOracle {
     
     function getPrice(Currency token0, Currency token1) external view override returns (uint256) {
         uint256 price = prices[token0][token1];
-        return price > 0 ? price : 1e18;
+        if (price > 0) {
+            return price;
+        }
+        // Check reverse direction
+        uint256 reversePrice = prices[token1][token0];
+        if (reversePrice > 0) {
+            // Return inverse price if reverse exists
+            return 1e36 / reversePrice;
+        }
+        return 1e18; // Default fallback
     }
     
     function getPriceAtTime(

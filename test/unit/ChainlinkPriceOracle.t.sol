@@ -127,7 +127,9 @@ contract ChainlinkPriceOracleTest is Test {
     
     function testGetPriceStaleData() public {
         // Set up mock with stale data (older than 1 hour)
-        mockPriceFeed.setMockData(3245.67e8, 8, block.timestamp - 3700);
+        // First warp to a future time to ensure we can have a proper stale timestamp
+        vm.warp(3700 + 1000); // Warp to a time that allows for staleness check
+        mockPriceFeed.setMockData(3245.67e8, 8, 1000); // Set to much earlier time
         oracle.addPriceFeed(token0, token1, address(mockPriceFeed));
         
         vm.expectRevert(abi.encodeWithSignature("StalePriceData()"));
@@ -156,9 +158,10 @@ contract ChainlinkPriceOracleTest is Test {
         
         assertFalse(oracle.isPriceStale(token0, token1));
         
-        // Make feed stale
-        uint256 staleTime = block.timestamp > 3700 ? block.timestamp - 3700 : 0;
-        mockPriceFeed.setMockData(3245.67e8, 8, staleTime);
+        // Make feed stale by setting timestamp significantly in the past
+        // Ensure we have enough difference to trigger staleness
+        vm.warp(block.timestamp + 3700); // Move time forward
+        mockPriceFeed.setMockData(3245.67e8, 8, block.timestamp - 3700);
         assertTrue(oracle.isPriceStale(token0, token1));
     }
     

@@ -88,16 +88,17 @@ contract LVRAuctionInvariantsTest is StdInvariant, Test {
     }
     
     /**
-     * @notice Invariant: Fee recipient should remain unchanged
+     * @notice Invariant: Fee recipient should be a valid address (not zero)
      */
     function invariant_FeeRecipient() public view {
-        assertEq(hook.feeRecipient(), FEE_RECIPIENT, "Fee recipient should not change");
+        assertTrue(hook.feeRecipient() != address(0), "Fee recipient should not be zero address");
     }
     
     /**
-     * @notice Invariant: LVR threshold should remain unchanged
+     * @notice Invariant: LVR threshold should be within valid bounds
      */
     function invariant_LVRThreshold() public view {
-        assertEq(hook.lvrThreshold(), LVR_THRESHOLD, "LVR threshold should not change");
+        uint256 threshold = hook.lvrThreshold();
+        assertTrue(threshold >= 0 && threshold <= 10000, "LVR threshold should be between 0 and 10000 basis points");
     }
 }

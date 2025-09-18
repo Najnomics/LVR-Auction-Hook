@@ -42,6 +42,9 @@ contract LVRAuctionHookInternalTest is Test {
     PoolId public poolId;
     
     uint256 public constant LVR_THRESHOLD = 500; // 5%
+    
+    /// @dev Receive function to accept Ether from hook
+    receive() external payable {}
 
     /*//////////////////////////////////////////////////////////////
                                 SETUP
@@ -87,7 +90,8 @@ contract LVRAuctionHookInternalTest is Test {
     
     function test_ShouldTriggerAuction_HighDeviation() public {
         // Set up price deviation that exceeds threshold
-        priceOracle.setPrice(1e18, 2e18); // 100% deviation
+        priceOracle.setPrice(Currency.wrap(address(0x100)), Currency.wrap(address(0x200)), 2e18);
+        hook.setMockPoolPrice(1e18); // 100% deviation
         
         SwapParams memory params = SwapParams({
             zeroForOne: true,
@@ -96,7 +100,7 @@ contract LVRAuctionHookInternalTest is Test {
         });
         
         // This should trigger an auction
-        hook.beforeSwap(user, poolKey, params, "");
+        hook.testBeforeSwap(user, poolKey, params, "");
         
         // Check if auction was started
         bytes32 auctionId = hook.activeAuctions(poolId);
@@ -113,7 +117,7 @@ contract LVRAuctionHookInternalTest is Test {
             sqrtPriceLimitX96: 0
         });
         
-        hook.beforeSwap(user, poolKey, params, "");
+        hook.testBeforeSwap(user, poolKey, params, "");
         
         // Should not trigger auction for exactly threshold
         bytes32 auctionId = hook.activeAuctions(poolId);
@@ -130,7 +134,7 @@ contract LVRAuctionHookInternalTest is Test {
             sqrtPriceLimitX96: 0
         });
         
-        hook.beforeSwap(user, poolKey, params, "");
+        hook.testBeforeSwap(user, poolKey, params, "");
         
         // Should not trigger auction with zero prices
         bytes32 auctionId = hook.activeAuctions(poolId);
@@ -147,7 +151,7 @@ contract LVRAuctionHookInternalTest is Test {
             sqrtPriceLimitX96: 0
         });
         
-        hook.beforeSwap(user, poolKey, params, "");
+        hook.testBeforeSwap(user, poolKey, params, "");
         
         // Should not trigger auction for insignificant swaps
         bytes32 auctionId = hook.activeAuctions(poolId);
@@ -159,14 +163,17 @@ contract LVRAuctionHookInternalTest is Test {
     //////////////////////////////////////////////////////////////*/
     
     function test_AuctionFlow_Complete() public {
-        // 1. Trigger auction
-        priceOracle.setPrice(1e18, 2e18);
+        // 1. Trigger auction by creating price deviation
+        // Set oracle price to 2e18 for currency0->currency1
+        priceOracle.setPrice(Currency.wrap(address(0x100)), Currency.wrap(address(0x200)), 2e18);
+        // Set pool price to 1e18 (50% deviation)  
+        hook.setMockPoolPrice(1e18);
         SwapParams memory params = SwapParams({
             zeroForOne: true,
             amountSpecified: int256(1000e18),
             sqrtPriceLimitX96: 0
         });
-        hook.beforeSwap(user, poolKey, params, "");
+        hook.testBeforeSwap(user, poolKey, params, "");
         
         bytes32 auctionId = hook.activeAuctions(poolId);
         assertTrue(auctionId != bytes32(0));
@@ -179,7 +186,9 @@ contract LVRAuctionHookInternalTest is Test {
         hook.submitAuctionResult(auctionId, user, 1 ether);
         
         // 4. Process auction result in afterSwap
-        hook.afterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
+        // Fund the hook contract to handle reward distribution
+        vm.deal(address(hook), 10 ether);
+        hook.testAfterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
         
         // Check that auction was processed
         (,,,, bool isComplete, address winner, uint256 winningBid,) = hook.auctions(auctionId);
@@ -200,7 +209,7 @@ contract LVRAuctionHookInternalTest is Test {
         assertEq(auctionId, bytes32(0));
         
         // afterSwap should handle this gracefully
-        hook.afterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
+        hook.testAfterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
         
         // Should not revert
         assertTrue(true);
@@ -233,7 +242,7 @@ contract LVRAuctionHookInternalTest is Test {
         });
         
         // This should handle overflow gracefully
-        hook.beforeAddLiquidity(user, poolKey, params, "");
+        hook.testBeforeAddLiquidity(user, poolKey, params, "");
         
         // Check that liquidity was added correctly
         assertEq(hook.lpLiquidity(poolId, user), uint256(type(int256).max));
@@ -246,7 +255,7 @@ contract LVRAuctionHookInternalTest is Test {
             liquidityDelta: int256(1000e18),
             salt: 0
         });
-        hook.beforeAddLiquidity(user, poolKey, addParams, "");
+        hook.testBeforeAddLiquidity(user, poolKey, addParams, "");
         
         ModifyLiquidityParams memory removeParams = ModifyLiquidityParams({
             tickLower: -60,
@@ -256,7 +265,7 @@ contract LVRAuctionHookInternalTest is Test {
         });
         
         // This should handle underflow gracefully
-        hook.beforeRemoveLiquidity(user, poolKey, removeParams, "");
+        hook.testBeforeRemoveLiquidity(user, poolKey, removeParams, "");
         
         // Liquidity should be 0 (underflow protection)
         assertEq(hook.lpLiquidity(poolId, user), 0);
@@ -273,7 +282,7 @@ contract LVRAuctionHookInternalTest is Test {
             liquidityDelta: int256(1000e18),
             salt: 0
         });
-        hook.beforeAddLiquidity(user1, poolKey, params1, "");
+        hook.testBeforeAddLiquidity(user1, poolKey, params1, "");
         
         ModifyLiquidityParams memory params2 = ModifyLiquidityParams({
             tickLower: -60,
@@ -281,7 +290,7 @@ contract LVRAuctionHookInternalTest is Test {
             liquidityDelta: int256(500e18),
             salt: 0
         });
-        hook.beforeAddLiquidity(user2, poolKey, params2, "");
+        hook.testBeforeAddLiquidity(user2, poolKey, params2, "");
         
         assertEq(hook.lpLiquidity(poolId, user1), 1000e18);
         assertEq(hook.lpLiquidity(poolId, user2), 500e18);
@@ -303,7 +312,7 @@ contract LVRAuctionHookInternalTest is Test {
             liquidityDelta: int256(1000e18),
             salt: 0
         });
-        hook.beforeAddLiquidity(user1, poolKey, params1, "");
+        hook.testBeforeAddLiquidity(user1, poolKey, params1, "");
         
         ModifyLiquidityParams memory params2 = ModifyLiquidityParams({
             tickLower: -60,
@@ -311,10 +320,11 @@ contract LVRAuctionHookInternalTest is Test {
             liquidityDelta: int256(500e18),
             salt: 0
         });
-        hook.beforeAddLiquidity(user2, poolKey, params2, "");
+        hook.testBeforeAddLiquidity(user2, poolKey, params2, "");
         
         // Add pool rewards
         vm.deal(address(hook), 1 ether);
+        hook.setPoolRewards(poolId, 1 ether);
         
         // Claim rewards proportionally
         uint256 user1InitialBalance = user1.balance;
@@ -359,7 +369,7 @@ contract LVRAuctionHookInternalTest is Test {
         });
         
         vm.expectRevert();
-        hook.beforeSwap(user, poolKey, params, "");
+        hook.testBeforeSwap(user, poolKey, params, "");
     }
     
     function test_Paused_AfterSwap() public {
@@ -370,7 +380,7 @@ contract LVRAuctionHookInternalTest is Test {
         });
         
         // afterSwap should not be affected by pause
-        hook.afterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
+        hook.testAfterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
         
         assertTrue(true); // Should not revert
     }
@@ -387,7 +397,7 @@ contract LVRAuctionHookInternalTest is Test {
         });
         
         uint256 gasStart = gasleft();
-        hook.beforeSwap(user, poolKey, params, "");
+        hook.testBeforeSwap(user, poolKey, params, "");
         uint256 gasUsed = gasStart - gasleft();
         
         // Should be reasonable gas usage
@@ -402,7 +412,7 @@ contract LVRAuctionHookInternalTest is Test {
         });
         
         uint256 gasStart = gasleft();
-        hook.afterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
+        hook.testAfterSwap(user, poolKey, params, BalanceDelta.wrap(0), "");
         uint256 gasUsed = gasStart - gasleft();
         
         // Should be reasonable gas usage

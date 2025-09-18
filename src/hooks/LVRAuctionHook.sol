@@ -221,8 +221,12 @@ contract LVRAuctionHook is BaseHook, ReentrancyGuard, Ownable, Pausable {
         // Update LP liquidity tracking
         if (params.liquidityDelta < 0) {
             uint256 liquidityRemoved = uint256(-int256(params.liquidityDelta));
-            lpLiquidity[poolId][sender] -= liquidityRemoved;
-            totalLiquidity[poolId] -= liquidityRemoved;
+            // Prevent underflow by using minimum of current liquidity and removal amount
+            uint256 currentUserLiquidity = lpLiquidity[poolId][sender];
+            uint256 actualRemoval = liquidityRemoved > currentUserLiquidity ? currentUserLiquidity : liquidityRemoved;
+            
+            lpLiquidity[poolId][sender] -= actualRemoval;
+            totalLiquidity[poolId] -= actualRemoval;
         }
         
         return BaseHook.beforeRemoveLiquidity.selector;
