@@ -1,5 +1,8 @@
 # LVR Auction Hook 🔐
 
+<p align="center">
+  <img src="https://pbs.twimg.com/media/G1yTo5fbEAADlZE?format=jpg&name=medium" alt="LVR Auction Hook - First Place Winner EigenLayer Track" width="600"/>
+</p>
 
 ## 🏆 Winner Announcement
 
