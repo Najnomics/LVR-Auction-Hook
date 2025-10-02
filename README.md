@@ -1,8 +1,6 @@
 # LVR Auction Hook 🔐
 
 
-> **Uniswap v4 Hookathon (UHI6) Submission - EigenLayer Benefactor Track**
-
 ## 🏆 Winner Announcement
 
 **🎉 First Place Winner - EigenLayer Track at UHI6 Hookathon!**
