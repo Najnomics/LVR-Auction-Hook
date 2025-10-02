@@ -1,5 +1,22 @@
 # LVR Auction Hook 🔐
 
+
+> **Uniswap v4 Hookathon (UHI6) Submission - EigenLayer Benefactor Track**
+
+## 🏆 Winner Announcement
+
+**🎉 First Place Winner - EigenLayer Track at UHI6 Hookathon!**
+
+We're thrilled to announce that LVR Auction Hook won **first place** in the EigenLayer Benefactor Track at the Uniswap v4 Hookathon (UHI6)!
+
+[Official Announcement by Atrium Academy](https://x.com/AtriumAcademy/status/1971613072034066939)
+
+This recognition validates our approach to redistributing MEV profits to liquidity providers through EigenLayer's Actively Validated Services and Uniswap v4's programmable hook system.
+
+---
+
+A MEV redistribution infrastructure that combines Uniswap v4 Hooks with **EigenLayer's Actively Validated Services (AVS)** to auction first-in-block trading rights and redistribute arbitrage profits directly to liquidity providers. LVR Auction Hook turns Loss Versus Rebalancing into LP revenue streams.
+
 > **Uniswap v4 Hookathon (UHI6) Submission - EigenLayer Benefactor Track**
 
 A MEV redistribution infrastructure that combines Uniswap v4 Hooks with **EigenLayer's Actively Validated Services (AVS)** to auction first-in-block trading rights and redistribute arbitrage profits directly to liquidity providers. LVR Auction Hook turns Loss Versus Rebalancing into LP revenue streams.
